@@ -778,7 +778,10 @@ class App(tk.Tk):
                 futs={ex.submit(_gen_one,(i,p)):i for i,p in enumerate(prompts)}
                 for fut in _cf.as_completed(futs):
                     try: ix,res=fut.result(); imgs_map[ix]=res
-                    except Exception: imgs_map[futs[fut]]=[]
+                    except Exception as _ge:
+                        imgs_map[futs[fut]]=[]
+                        _gi=futs[fut]
+                        upd(f'第{_gi+1}张生图失败: {_ge}')
             imgs=[x for i in sorted(imgs_map) for x in imgs_map[i]]
             self.after(0,lambda:self._on_suite_done(imgs))
         except Exception as e:
@@ -788,6 +791,9 @@ class App(tk.Tk):
 
     def _on_suite_done(self, imgs):
         self._result_images.extend(imgs)
+        if not imgs:
+            from tkinter import messagebox
+            messagebox.showerror('生成失败', '所有图片生成均失败。请检查图像模型、API Key 和路径配置是否正确。')
         self._suite_gen_btn.config(state='normal')
         self._suite_progress_var.set(f'套装生成完成，共 {len(imgs)} 张图片 ✔')
         self._status(f'主图套装生成完成，共 {len(imgs)} 张', C['success'])

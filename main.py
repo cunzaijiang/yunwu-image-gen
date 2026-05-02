@@ -711,7 +711,7 @@ class App(tk.Tk):
                                         command=self._start_suite_gen)
         self._suite_gen_btn.pack(fill='x', ipady=4, pady=(4, 2))
         self._suite_prompts_btn=HoverBtn(parent,text='📋 查看提示词',command=self._show_suite_prompts,
-            bg=C['btn2'],activebackground=C['btn2'])
+            bg_n=C['btn2'],bg_h=C['btn2_h'])
         self._suite_prompts_btn.pack(fill='x',ipady=2,pady=(0,4))
         # Prompt edit area (shown in step mode after fetching)
         self._suite_edit_frame=tk.Frame(parent,bg=C['card'])

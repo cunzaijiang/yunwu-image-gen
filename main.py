@@ -108,12 +108,27 @@ def _parse_imgs(items):
                 _img=Image.open(io.BytesIO(resp.read())); _img.load(); result.append(_img)
     return result
 
+def _extract_items(resp_json):
+    # Support both {data:[...]} and direct list or other formats
+    if isinstance(resp_json, dict):
+        if 'data' in resp_json: return resp_json['data']
+        if 'images' in resp_json: return resp_json['images']
+        if 'output' in resp_json: return resp_json['output']
+        # Single image dict
+        if 'b64_json' in resp_json or 'url' in resp_json: return [resp_json]
+    if isinstance(resp_json, list): return resp_json
+    raise ValueError(f'无法解析 API 返回格式: {str(resp_json)[:200]}')
+
 def api_generate(api_key,gen_url,model,prompt,n,size,quality,timeout):
     headers={'Authorization':f'Bearer {api_key}','Content-Type':'application/json'}
     body={'model':model,'prompt':prompt,'n':n,'size':size,'quality':quality}
     r=requests.post(gen_url,headers=headers,json=body,timeout=timeout)
     r.raise_for_status()
-    return _parse_imgs(r.json()['data'])
+    resp=r.json()
+    items=_extract_items(resp)
+    result=_parse_imgs(items)
+    if not result: raise ValueError(f'返回数据中未找到图片, 原始响应: {str(resp)[:300]}')
+    return result
 
 def api_edit(api_key,edit_url,model,prompt,n,size,image_paths,timeout):
     headers={'Authorization':f'Bearer {api_key}'}
@@ -125,7 +140,11 @@ def api_edit(api_key,edit_url,model,prompt,n,size,image_paths,timeout):
         data={'model':model,'prompt':prompt,'n':str(n),'size':size}
         r=requests.post(edit_url,headers=headers,data=data,files=files,timeout=timeout)
         r.raise_for_status()
-        return _parse_imgs(r.json()['data'])
+        resp=r.json()
+        items=_extract_items(resp)
+        result=_parse_imgs(items)
+        if not result: raise ValueError(f'返回数据中未找到图片, 原始响应: {str(resp)[:300]}')
+        return result
     finally:
         for fh in opened: fh.close()
 

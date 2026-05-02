@@ -280,7 +280,9 @@ class App(tk.Tk):
                ('质量 Quality:',self._var_quality,QUALITY_OPTIONS)]
         for i,(lbl,var,vals) in enumerate(rows):
             tk.Label(cf,text=lbl,bg=C['card'],fg=C['fg'],font=('Segoe UI',9),anchor='w').grid(row=i,column=0,sticky='w',pady=3,padx=(0,4))
-            ttk.Combobox(cf,textvariable=var,values=vals,state='readonly',font=('Segoe UI',9)).grid(row=i,column=1,sticky='ew',pady=3)
+            cb_st='normal' if i==0 else 'readonly'
+            cb=ttk.Combobox(cf,textvariable=var,values=vals,state=cb_st,font=('Segoe UI',9))
+            cb.grid(row=i,column=1,sticky='ew',pady=3)
         tk.Label(cf,text='数量 N:',bg=C['card'],fg=C['fg'],font=('Segoe UI',9),anchor='w').grid(row=3,column=0,sticky='w',pady=3,padx=(0,4))
         tk.Spinbox(cf,textvariable=self._var_n,from_=1,to=10,width=6,
             bg=C['input'],fg=C['fg'],buttonbackground=C['btn2'],relief='flat',font=('Segoe UI',9)).grid(row=3,column=1,sticky='w',pady=3)

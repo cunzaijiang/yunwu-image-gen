@@ -698,6 +698,9 @@ class App(tk.Tk):
         self._suite_gen_btn = HoverBtn(parent, text='✨ 一键生成主图套装',
                                         command=self._start_suite_gen)
         self._suite_gen_btn.pack(fill='x', ipady=4, pady=(4, 2))
+        self._suite_prompts_btn=HoverBtn(parent,text='📋 查看提示词',command=self._show_suite_prompts,
+            bg=C['btn2'],activebackground=C['btn2'])
+        self._suite_prompts_btn.pack(fill='x',ipady=2,pady=(0,4))
         tk.Label(parent, textvariable=self._suite_progress_var,
                  bg=C['card'], fg=C['warning'],
                  font=('Segoe UI', 8)).pack(anchor='w')
@@ -838,12 +841,35 @@ class App(tk.Tk):
                             _gi=futs[fut]
                             upd(f'第{_gi+1}张生图失败: {_ge}')
                 except Exception: upd(f"部分图片超时，已完成 {_done[0]}/{total} 张")
+            self._last_suite_prompts=list(prompts)
             imgs=[x for i in sorted(imgs_map) for x in imgs_map[i]]
             self.after(0,lambda:self._on_suite_done(imgs))
         except Exception as e:
             import traceback
             self.after(0,lambda m=(str(e) or traceback.format_exc()[-200:]):self._on_suite_err(m))
 
+
+    def _show_suite_prompts(self):
+        prompts=getattr(self,"_last_suite_prompts",[])
+        win=tk.Toplevel(self)
+        win.title('提示词列表')
+        win.configure(bg=C['bg'])
+        win.geometry("640x480")
+        tk.Label(win,text=f'Chat 模型生成的提示词（共 {len(prompts)} 条）',
+            bg=C['bg'],fg=C['fg'],font=('Segoe UI',10,'bold')).pack(pady=(12,6))
+        fr=tk.Frame(win,bg=C['bg']); fr.pack(fill='both',expand=True,padx=12,pady=(0,12))
+        sb=ttk.Scrollbar(fr); sb.pack(side='right',fill='y')
+        txt=tk.Text(fr,bg=C['input'],fg=C['fg'],insertbackground=C['fg'],
+            font=('Segoe UI',9),wrap='word',relief='flat',yscrollcommand=sb.set)
+        txt.pack(side='left',fill='both',expand=True)
+        sb.config(command=txt.yview)
+        if not prompts:
+            txt.insert('end','尚未生成提示词，请先运行一键生成主图套装。')
+        else:
+            for idx,p in enumerate(prompts,1):
+                txt.insert('end','[第'+str(idx)+'张]\n'+p+'\n\n')
+
+        txt.config(state='disabled')
 
     def _on_suite_done(self, imgs):
         self._result_images.extend(imgs)

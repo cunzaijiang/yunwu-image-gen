@@ -722,7 +722,7 @@ class App(tk.Tk):
             sp=('你是专业电商视觉设计师。'
                 '根据产品描述决定生成几张主图（3-12张）。'
                 '只返回纴JSON，格式{"count":N,"prompts":["p1",...]}. '
-                '每条提示词80字以内简洁英文，风格各异。禁止输出JSON以外任何文字。')
+                '每条提示词英文，风格各异。禁止输出JSON以外任何文字。')
             refs=getattr(self,"_suite_refs",[])
             if refs:
                 import base64 as _b64
@@ -736,7 +736,7 @@ class App(tk.Tk):
                     except Exception: pass
             else:
                 uc=desc
-            cb={'model':chat_model,'messages':[{'role':'system','content':sp},{'role':'user','content':uc}],'temperature':0.8,'max_tokens':2000}
+            cb={'model':chat_model,'messages':[{'role':'system','content':sp},{'role':'user','content':uc}],'temperature':0.8}
             upd(f'正在请求 Chat API ({chat_model})...')
             try:
                 r=requests.post(chat_url,

@@ -320,17 +320,10 @@ class App(tk.Tk):
             self._suite_frame.pack(fill='both',expand=True,padx=12,pady=4)
 
     def _setup_dnd(self,widget):
-        try:
-            from tkinterdnd2 import DND_FILES
-            widget.drop_target_register(DND_FILES)
-            widget.dnd_bind('<<Drop>>',self._on_drop)
-        except ImportError:
-            pass
+        pass  # DnD disabled for exe compatibility
 
     def _on_drop(self,event):
-        paths=self.tk.splitlist(event.data)
-        for p in paths:
-            self._add_single_ref(p)
+        pass
 
     def _add_ref_images(self):
         paths=filedialog.askopenfilenames(

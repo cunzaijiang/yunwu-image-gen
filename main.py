@@ -736,6 +736,7 @@ class App(tk.Tk):
                 ],
                 'temperature': 0.8,
             }
+            self.after(0, lambda u=chat_url: self._suite_progress_var.set(f'正在请求 Chat API: {u[:50]}...'))
             r = requests.post(chat_url, headers=headers, json=chat_body, timeout=timeout_v)
             r.raise_for_status()
             resp_data = r.json()
@@ -743,7 +744,7 @@ class App(tk.Tk):
             import json as _json, re as _re
             # Try parse JSON from content (handle markdown code blocks too)
             _json_str = content
-            _m = _re.search(r'', content, _re.DOTALL)
+            _m = _re.search(r'```(?:json)?\s*({[\s\S]*?})\s*```', content)
             if _m: _json_str = _m.group(1)
             elif '{' in content: _json_str = content[content.find('{'):content.rfind('}')+1]
             try:

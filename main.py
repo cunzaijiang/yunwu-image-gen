@@ -350,8 +350,20 @@ class App(tk.Tk):
             insertbackground=C['fg'],relief='flat',font=('Segoe UI',9),bd=4,padx=4,pady=4)
         self._prompt.pack(fill='both',expand=True)
         # Suite frame (hidden by default)
+        # Suite frame with scrollbar
         self._suite_frame=tk.Frame(left,bg=C['card'])
-        self._build_suite_panel(self._suite_frame)
+        # scrollable inner container
+        _suite_canvas=tk.Canvas(self._suite_frame,bg=C['card'],highlightthickness=0)
+        _suite_vsb=ttk.Scrollbar(self._suite_frame,orient='vertical',command=_suite_canvas.yview)
+        _suite_canvas.configure(yscrollcommand=_suite_vsb.set)
+        _suite_vsb.pack(side='right',fill='y')
+        _suite_canvas.pack(side='left',fill='both',expand=True)
+        self._suite_inner=tk.Frame(_suite_canvas,bg=C['card'])
+        _suite_win=_suite_canvas.create_window((0,0),window=self._suite_inner,anchor='nw')
+        self._suite_inner.bind('<Configure>',lambda e:_suite_canvas.configure(scrollregion=_suite_canvas.bbox('all')))
+        _suite_canvas.bind('<Configure>',lambda e:_suite_canvas.itemconfig(_suite_win,width=e.width))
+        _suite_canvas.bind('<MouseWheel>',lambda e:_suite_canvas.yview_scroll(int(-1*(e.delta/120)),'units'))
+        self._build_suite_panel(self._suite_inner)
         # Generate button
         self._gen_lf=tk.Frame(left,bg=C['card'])
         self._gen_lf.pack(fill='x',padx=12,pady=(0,10))
@@ -607,6 +619,7 @@ class App(tk.Tk):
         self._var_chat_key = tk.StringVar(value='')
         self._var_chat_model = tk.StringVar(value='gpt-4o-mini')
         self._var_suite_size = tk.StringVar(value='1024x1536')
+        self._var_suite_count = tk.IntVar(value=6)
         self._suite_progress_var = tk.StringVar(value='')
         api_frame = tk.Frame(parent, bg=C['card'])
         api_frame.pack(fill='x', pady=(0, 6))
@@ -673,6 +686,15 @@ class App(tk.Tk):
         self._suite_ref_frame.pack(fill='x',pady=(0,4))
         HoverBtn(parent,text='+ 添加参考图',bg_n=C['btn2'],bg_h=C['btn2_h'],
             command=self._add_suite_refs).pack(anchor='w',pady=(0,4))
+        cnt_frame=tk.Frame(parent,bg=C['card'])
+        cnt_frame.pack(fill='x',pady=(0,4))
+        tk.Label(cnt_frame,text='生成张数:',bg=C['card'],fg=C['fg'],
+            font=('Segoe UI',9),anchor='w').pack(side='left',padx=(0,6))
+        tk.Spinbox(cnt_frame,textvariable=self._var_suite_count,from_=1,to=20,width=5,
+            bg=C['input'],fg=C['fg'],buttonbackground=C['btn2'],relief='flat',
+            font=('Segoe UI',9)).pack(side='left')
+        tk.Label(cnt_frame,text='张（Chat 模型按此数量生成提示词）',bg=C['card'],fg=C['fg_dim'],
+            font=('Segoe UI',8)).pack(side='left',padx=6)
         self._suite_gen_btn = HoverBtn(parent, text='✨ 一键生成主图套装',
                                         command=self._start_suite_gen)
         self._suite_gen_btn.pack(fill='x', ipady=4, pady=(4, 2))
@@ -736,6 +758,7 @@ class App(tk.Tk):
             tv=int(self._var_timeout.get()) if hasattr(self,'_var_timeout') else 120
             desc=self._suite_desc.get('1.0','end-1c').strip()
             sz=self._var_suite_size.get() or '1024x1536'
+            suite_count=self._var_suite_count.get() if hasattr(self,'_var_suite_count') else 6
             q=self._var_quality.get() or QUALITY_OPTIONS[0]
             mdl=self._var_model.get().strip() or MODEL_PRESETS[0]
             bu=self._var_base_url.get().strip() or DEFAULT_BASE_URL
@@ -744,8 +767,8 @@ class App(tk.Tk):
             if not desc: fail('请先填写产品描述'); return
             if not api_key: fail('请先填写 API Key'); return
             if not chat_url: fail('请填写 Chat URL'); return
-            sp=('你是专业电商视觉设计师。'
-                '根据产品描述决定生成几张主图（3-12张）。'
+            sp=(f'你是专业电商视觉设计师。'
+                '根据用户要求生成{suite_count}张主图。'
                 '只返回纴JSON，格式{"count":N,"prompts":["p1",...]}. '
                 '每条提示词不超过200字，风格各异。禁止输出JSON以外任何文字。')
             refs=getattr(self,"_suite_refs",[])

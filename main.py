@@ -595,7 +595,7 @@ class App(tk.Tk):
                      values=['1024x1536','1536x1024','1024x1024'],
                      font=('Segoe UI', 9), state='readonly', width=12
                      ).pack(side='left')
-        self._suite_gen_btn = HoverBtn(parent, text='✨ 一键生成主图套装（9张）',
+        self._suite_gen_btn = HoverBtn(parent, text='✨ 一键生成主图套装',
                                         command=self._start_suite_gen)
         self._suite_gen_btn.pack(fill='x', ipady=4, pady=(4, 2))
         tk.Label(parent, textvariable=self._suite_progress_var,
@@ -625,11 +625,10 @@ class App(tk.Tk):
             desc = self._suite_desc.get("1.0", "end-1c").strip()
             size = self._var_suite_size.get()
             sys_prompt = (
-                '你是一个专业电商视觉设计师，根据产品描述生成9张电商主图的图像生成提示词。'
-                '请返回 JSON 格式: {"prompts":[...9 prompts...]}。'
-                '每条提示词用英文，200字以内，9张风格各异：'
-                '主图展示/场景水墨画/极简白底/生活场景/特写细节/'
-                '季节限定/赠禼包装/品牌故事/联动顶图。'
+                '你是一个专业电商视觉设计师。根据用户的产品描述，'
+                '自行判断应该生成几张主图（一般3-12张，根据产品复杂度和展示需求决定）。'
+                '返回格式：{"count": 张数, "prompts": [提示词1, 提示词2, ...]}。'
+                '每条提示词用英文，200字以内，风格各异。不需固定9张，按产品实际需要决定。'
             )
             headers = {'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}
             chat_body = {
@@ -646,12 +645,15 @@ class App(tk.Tk):
             resp_data = r.json()
             content = resp_data['choices'][0]['message']['content']
             import json as _json
-            prompts = _json.loads(content).get('prompts', [])
+            parsed = _json.loads(content)
+            prompts = parsed.get('prompts', [])
             if not prompts:
                 raise ValueError('Chat API 返回的 prompts 为空')
+            self.after(0, lambda n=len(prompts): self._suite_progress_var.set(f'Chat 已返回 {n} 张提示词，准备生图...'))
             # Step 2: 逐一调用图像生成 API
             base_url = self._var_base_url.get().strip() or DEFAULT_BASE_URL
-            gen_url_base, _ = get_api_urls(base_url)
+            gen_path = self._var_gen_path.get().strip() if hasattr(self,'_var_gen_path') else DEFAULT_GEN_PATH
+            gen_url_base = base_url.rstrip('/') + gen_path
             model = self._var_model.get().strip() or MODEL_PRESETS[0]
             quality = self._var_quality.get()
             total = len(prompts)
@@ -661,7 +663,7 @@ class App(tk.Tk):
                     self._suite_progress_var.set(f'正在生成图片 {i+1}/{t}...'))
                 gen_headers = {'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}
                 gen_body = {'model': model, 'prompt': prompt, 'n': 1,
-                            'size': size, 'quality': quality, 'response_format': 'b64_json'}
+                            'size': size, 'quality': quality}
                 gr = requests.post(gen_url_base, headers=gen_headers,
                                    json=gen_body, timeout=timeout_v)
                 gr.raise_for_status()

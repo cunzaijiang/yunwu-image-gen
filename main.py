@@ -30,11 +30,14 @@ def load_config():
 def save_config(cfg):
     p=get_app_dir()/CONFIG_FILE
     p.write_text(json.dumps(cfg,ensure_ascii=False,indent=2),encoding='utf-8')
-def b64_to_pil(b64): return Image.open(io.BytesIO(base64.b64decode(b64)))
+def b64_to_pil(b64):
+    img=Image.open(io.BytesIO(base64.b64decode(b64)))
+    img.load()  # force decode, prevent BytesIO GC issue
+    return img
 def make_thumb(img,size=(160,160)):
     th=img.copy(); th.thumbnail(size,Image.LANCZOS); return ImageTk.PhotoImage(th)
 def auto_fn(idx,ext='png'):
-    return f'yunwu_{time.strftime("%Y%m%d_%H%M%S")}_{idx+1:02d}.{ext}'
+    return f'image_{time.strftime("%Y%m%d_%H%M%S")}_{idx+1:02d}.{ext}'
 
 class HoverBtn(tk.Button):
     def __init__(self,master,bg_n=None,bg_h=None,**kw):
@@ -101,7 +104,8 @@ def _parse_imgs(items):
         if 'b64_json' in d and d['b64_json']: result.append(b64_to_pil(d['b64_json']))
         elif 'url' in d and d['url']:
             import urllib.request
-            with urllib.request.urlopen(d['url'],timeout=30) as resp: result.append(Image.open(io.BytesIO(resp.read())))
+            with urllib.request.urlopen(d['url'],timeout=30) as resp:
+                _img=Image.open(io.BytesIO(resp.read())); _img.load(); result.append(_img)
     return result
 
 def api_generate(api_key,gen_url,model,prompt,n,size,quality,timeout):

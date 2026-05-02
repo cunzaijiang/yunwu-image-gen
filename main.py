@@ -804,12 +804,14 @@ class App(tk.Tk):
             import concurrent.futures as _cf2
             with _cf2.ThreadPoolExecutor(max_workers=min(suite_count,5)) as _ex2:
                 _futs={_ex2.submit(_get_one_prompt,i):i for i in range(suite_count)}
-                for _fut in _cf2.as_completed(_futs):
-                    try:
-                        _p=_fut.result()
-                        if _p: prompts.append(_p)
-                    except Exception as _ce:
-                        upd(f'第{_futs[_fut]+1}条提示词获取失败: {_ce}')
+                try:
+                    for _fut in _cf2.as_completed(_futs, timeout=tv+10):
+                        try:
+                            _p=_fut.result()
+                            if _p: prompts.append(_p)
+                        except Exception as _ce:
+                            upd(f'第{_futs[_fut]+1}条提示词失败: {_ce}')
+                except Exception: pass  # TimeoutError or other
             if not prompts: fail('所有提示词生成失败，请检查 Chat API 配置'); return
 
             total=len(prompts)
@@ -828,12 +830,14 @@ class App(tk.Tk):
             imgs_map={}
             with _cf.ThreadPoolExecutor(max_workers=min(total,5)) as ex:
                 futs={ex.submit(_gen_one,(i,p)):i for i,p in enumerate(prompts)}
-                for fut in _cf.as_completed(futs):
-                    try: ix,res=fut.result(); imgs_map[ix]=res
-                    except Exception as _ge:
-                        imgs_map[futs[fut]]=[]
-                        _gi=futs[fut]
-                        upd(f'第{_gi+1}张生图失败: {_ge}')
+                try:
+                    for fut in _cf.as_completed(futs, timeout=tv+10):
+                        try: ix,res=fut.result(); imgs_map[ix]=res
+                        except Exception as _ge:
+                            imgs_map[futs[fut]]=[]
+                            _gi=futs[fut]
+                            upd(f'第{_gi+1}张生图失败: {_ge}')
+                except Exception: upd(f"部分图片超时，已完成 {_done[0]}/{total} 张")
             imgs=[x for i in sorted(imgs_map) for x in imgs_map[i]]
             self.after(0,lambda:self._on_suite_done(imgs))
         except Exception as e:

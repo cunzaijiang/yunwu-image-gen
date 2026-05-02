@@ -31,6 +31,31 @@ def load_config():
 def save_config(cfg):
     p=get_app_dir()/CONFIG_FILE
     p.write_text(json.dumps(cfg,ensure_ascii=False,indent=2),encoding='utf-8')
+def _repair_json(s):
+    """Try to fix truncated JSON by auto-closing open structures."""
+    import json as _j
+    try: _j.loads(s); return s
+    except Exception: pass
+    s = s.rstrip()
+    # Remove trailing incomplete token until last safe char
+    while s and s[-1] not in ('}', ']', '"', 'e', 'l', '0','1','2','3','4','5','6','7','8','9'):
+        s = s[:-1]
+    # Track open brackets
+    depth = []
+    in_str = False
+    esc = False
+    for c in s:
+        if esc: esc = False; continue
+        if c == '\\' and in_str: esc = True; continue
+        if c == '"' and not esc: in_str = not in_str; continue
+        if not in_str:
+            if c == '{': depth.append('}')
+            elif c == '[': depth.append(']')
+            elif c in ('}', ']') and depth: depth.pop()
+    if in_str: s += '"'
+    s += ''.join(reversed(depth))
+    return s
+
 def b64_to_pil(b64):
     img=Image.open(io.BytesIO(base64.b64decode(b64)))
     img.load()  # force decode, prevent BytesIO GC issue
@@ -757,8 +782,10 @@ class App(tk.Tk):
                 js=content[_s:_e+1] if _e>_s else content[_s:]
             if not js.strip(): fail(f'模型未返回JSON，内容: {content[:500]}'); return
             try:
+                js = _repair_json(js)
                 parsed=_j.loads(js)
                 prompts=parsed.get('prompts',[])
+                prompts=[str(p)[:300] for p in prompts[:12]]  # max 12 prompts, each 300 chars
             except Exception as pe: fail('JSON解析失败: '+str(pe)+' | 内容: '+content[:400]); return
             if not prompts: fail(f'prompts为空: {content[:400]}'); return
             total=len(prompts)

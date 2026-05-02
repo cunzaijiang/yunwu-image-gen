@@ -97,10 +97,19 @@ class ImageViewer(tk.Toplevel):
 def api_generate(api_key,base_url,model,prompt,n,size,quality):
     url_gen,_=get_api_urls(base_url)
     headers={'Authorization':f'Bearer {api_key}','Content-Type':'application/json'}
-    body={'model':model,'prompt':prompt,'n':n,'size':size,'quality':quality,'response_format':'b64_json'}
+    body={'model':model,'prompt':prompt,'n':n,'size':size,'quality':quality}
     r=requests.post(url_gen,headers=headers,json=body,timeout=120)
     r.raise_for_status()
-    return [b64_to_pil(d['b64_json']) for d in r.json()['data']]
+    items = r.json()['data']
+    result = []
+    for d in items:
+        if 'b64_json' in d and d['b64_json']:
+            result.append(b64_to_pil(d['b64_json']))
+        elif 'url' in d and d['url']:
+            import urllib.request
+            with urllib.request.urlopen(d['url']) as resp:
+                result.append(Image.open(io.BytesIO(resp.read())))
+    return result
 
 def api_edit(api_key,base_url,model,prompt,n,size,image_paths):
     _,url_edit=get_api_urls(base_url)
@@ -110,10 +119,19 @@ def api_edit(api_key,base_url,model,prompt,n,size,image_paths):
         for path in image_paths:
             fh=open(path,'rb'); opened.append(fh)
             files.append(('image[]',(Path(path).name,fh,'image/png')))
-        data={'model':model,'prompt':prompt,'n':str(n),'size':size,'response_format':'b64_json'}
+        data={'model':model,'prompt':prompt,'n':str(n),'size':size}
         r=requests.post(url_edit,headers=headers,data=data,files=files,timeout=180)
         r.raise_for_status()
-        return [b64_to_pil(d['b64_json']) for d in r.json()['data']]
+        items = r.json()['data']
+        result = []
+        for d in items:
+            if 'b64_json' in d and d['b64_json']:
+                result.append(b64_to_pil(d['b64_json']))
+            elif 'url' in d and d['url']:
+                import urllib.request
+                with urllib.request.urlopen(d['url']) as resp:
+                    result.append(Image.open(io.BytesIO(resp.read())))
+        return result
     finally:
         for fh in opened: fh.close()
 

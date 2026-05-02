@@ -710,6 +710,9 @@ class App(tk.Tk):
         self._suite_gen_btn = HoverBtn(parent, text='✨ 一键生成主图套装',
                                         command=self._start_suite_gen)
         self._suite_gen_btn.pack(fill='x', ipady=4, pady=(4, 2))
+        self._suite_prog_lbl=tk.Label(parent,textvariable=self._suite_progress_var,
+            bg=C['card'],fg=C['warning'],font=('Segoe UI',8),anchor='w')
+        self._suite_prog_lbl.pack(fill='x',padx=4)
         self._suite_prompts_btn=HoverBtn(parent,text='📋 查看提示词',command=self._show_suite_prompts,
             bg_n=C['btn2'],bg_h=C['btn2_h'])
         self._suite_prompts_btn.pack(fill='x',ipady=2,pady=(0,4))
@@ -736,9 +739,7 @@ class App(tk.Tk):
         # Confirm button (step mode only, hidden by default)
         self._suite_confirm_btn=HoverBtn(self._suite_edit_frame,
             text='✅ 确认提示词，开始生图',command=self._confirm_suite_gen)
-        self._suite_confirm_btn.pack(fill='x',ipady=4,pady=(6,2))
-        tk.Label(parent,textvariable=self._suite_progress_var,
-            bg=C['card'],fg=C['warning'],font=('Segoe UI',8)).pack(anchor='w')
+        self._suite_confirm_btn.pack(fill='x',ipady=4,pady=(4,2))
 
     def _add_suite_refs(self):
         from tkinter import filedialog

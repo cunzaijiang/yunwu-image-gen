@@ -430,8 +430,8 @@ class App(tk.Tk):
             model=self._var_model.get()
             prompt=self._prompt.get('1.0','end').strip()
             n=self._var_n.get()
-            size=self._var_size.get()
-            quality=self._var_quality.get()
+            size=self._var_size.get() or SIZE_OPTIONS[0]
+            quality=self._var_quality.get() or QUALITY_OPTIONS[0]
             timeout=self._var_timeout.get() if hasattr(self,'_var_timeout') else DEFAULT_TIMEOUT
             base_url=self._var_base_url.get().strip() or DEFAULT_BASE_URL
             gen_path=self._var_gen_path.get().strip() if hasattr(self,'_var_gen_path') else DEFAULT_GEN_PATH
@@ -452,7 +452,9 @@ class App(tk.Tk):
             except Exception: pass
             self.after(0,lambda:self._on_gen_err(f'API错误: {msg}'))
         except Exception as e:
-            self.after(0,lambda:self._on_gen_err(f'错误: {e}'))
+            import traceback; detail=traceback.format_exc()[-300:]
+            msg=str(e) if str(e) and str(e)!='None' else detail
+            self.after(0,lambda m=msg:self._on_gen_err(f'错误: {m}'))
 
     def _on_gen_done(self,imgs):
         self._result_images.extend(imgs)

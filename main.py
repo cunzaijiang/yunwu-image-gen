@@ -698,106 +698,90 @@ class App(tk.Tk):
         threading.Thread(target=self._do_suite_gen, daemon=True).start()
 
     def _do_suite_gen(self):
+        import json as _j, re as _re, concurrent.futures as _cf
+        upd=lambda m:self.after(0,lambda x=m:self._suite_progress_var.set(x))
+        fail=lambda m:self.after(0,lambda x=m:self._on_suite_err(x))
         try:
-            main_key = self._var_key.get().strip()
-            chat_key = self._var_chat_key.get().strip() if hasattr(self,'_var_chat_key') else ''
-            api_key = chat_key if chat_key else main_key
-            chat_url = self._var_chat_url.get().strip()
-            chat_model = self._var_chat_model.get().strip() or "gpt-4o-mini"
-            timeout_v = self._var_timeout.get() if hasattr(self, "_var_timeout") else 120
-            desc = self._suite_desc.get("1.0", "end-1c").strip()
-            size = self._var_suite_size.get()
-            sys_prompt = (
-                '你是一个专业电商视觉设计师。根据用户的产品描述，'
-                '自行判断应该生成几张主图（一般3-12张，根据产品复杂度和展示需求决定）。'
-                '返回格式：{"count": 张数, "prompts": [提示词1, 提示词2, ...]}。'
-                '每条提示词用英文，200字以内，风格各异。不需固定9张，按产品实际需要决定。'
-            )
-            headers = {'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}
-            # Build user message with optional ref images
-            suite_refs = getattr(self, '_suite_refs', [])
-            if suite_refs:
+            k1=self._var_key.get().strip()
+            k2=self._var_chat_key.get().strip() if hasattr(self,'_var_chat_key') else ''
+            api_key=k2 if k2 else k1
+            chat_url=self._var_chat_url.get().strip()
+            chat_model=self._var_chat_model.get().strip() or 'gpt-4o-mini'
+            tv=int(self._var_timeout.get()) if hasattr(self,'_var_timeout') else 120
+            desc=self._suite_desc.get('1.0','end-1c').strip()
+            sz=self._var_suite_size.get() or '1024x1536'
+            q=self._var_quality.get() or QUALITY_OPTIONS[0]
+            mdl=self._var_model.get().strip() or MODEL_PRESETS[0]
+            bu=self._var_base_url.get().strip() or DEFAULT_BASE_URL
+            gp=self._var_gen_path.get().strip() if hasattr(self,'_var_gen_path') else DEFAULT_GEN_PATH
+            gen_url=bu.rstrip('/')+gp
+            if not desc: fail('请先填写产品描述'); return
+            if not api_key: fail('请先填写 API Key'); return
+            if not chat_url: fail('请填写 Chat URL'); return
+            sp=('你是专业电商视觉设计师。'
+                '根据产品描述决定生成几张主图（3-12张）。'
+                '只返回纴JSON，格式{"count":N,"prompts":["p1",...]}. '
+                '每条200字英文，风格各异。禁止输出JSON以外任何文字。')
+            refs=getattr(self,"_suite_refs",[])
+            if refs:
                 import base64 as _b64
-                user_content = [{'type':'text','text': desc}]
-                for ref_path, _ in suite_refs[:6]:
+                uc=[{'type':'text','text':desc}]
+                for rp,_ in refs[:6]:
                     try:
-                        with open(ref_path,'rb') as _f: _d=_b64.b64encode(_f.read()).decode()
-                        _ext=ref_path.rsplit('.',1)[-1].lower()
+                        with open(rp,"rb") as _f: _d=_b64.b64encode(_f.read()).decode()
+                        _ext=rp.rsplit(".",1)[-1].lower()
                         _mt='image/png' if _ext=='png' else 'image/jpeg'
-                        user_content.append({'type':'image_url','image_url':{'url':f'data:{_mt};base64,{_d}'}})
+                        uc.append({'type':'image_url','image_url':{'url':f'data:{_mt};base64,{_d}'}})
                     except Exception: pass
             else:
-                user_content = desc
-            chat_body = {
-                'model': chat_model,
-                'messages': [
-                    {'role': 'system', 'content': sys_prompt},
-                    {'role': 'user', 'content': user_content}
-                ],
-                'temperature': 0.8,
-            }
-            self.after(0, lambda u=chat_url: self._suite_progress_var.set(f'正在请求 Chat API: {u[:50]}...'))
-            r = requests.post(chat_url, headers=headers, json=chat_body, timeout=timeout_v)
-            r.raise_for_status()
-            resp_data = r.json()
-            content = resp_data['choices'][0]['message']['content'].strip()
-            import json as _json, re as _re
-            # Try parse JSON from content (handle markdown code blocks too)
-            _json_str = content
-            _m = _re.search(r'```(?:json)?\s*({[\s\S]*?})\s*```', content)
-            if _m: _json_str = _m.group(1)
-            elif '{' in content: _json_str = content[content.find('{'):content.rfind('}')+1]
+                uc=desc
+            cb={'model':chat_model,'messages':[{'role':'system','content':sp},{'role':'user','content':uc}],'temperature':0.8}
+            upd(f'正在请求 Chat API ({chat_model})...')
             try:
-                parsed = _json.loads(_json_str)
-                prompts = parsed.get('prompts', [])
-            except Exception as _pe:
-                raise ValueError(f'无法解析 Chat 返回内容: {content[:300]}')
-            if not prompts:
-                raise ValueError(f'Chat 返回的 prompts 为空, 原始内容: {content[:300]}')
-            self.after(0, lambda n=len(prompts): self._suite_progress_var.set(f'Chat 已返回 {n} 张提示词，准备生图...'))
-            # Step 2: 逐一调用图像生成 API
-            base_url = self._var_base_url.get().strip() or DEFAULT_BASE_URL
-            gen_path = self._var_gen_path.get().strip() if hasattr(self,'_var_gen_path') else DEFAULT_GEN_PATH
-            gen_url_base = base_url.rstrip('/') + gen_path
-            model = self._var_model.get().strip() or MODEL_PRESETS[0]
-            quality = self._var_quality.get()
-            total = len(prompts)
-            imgs = []
-            self.after(0, lambda t=total: self._suite_progress_var.set(f'并行生成 {t} 张图片...'))
-            import concurrent.futures as _cf
+                r=requests.post(chat_url,
+                    headers={'Authorization':f'Bearer {api_key}','Content-Type':'application/json'},
+                    json=cb,timeout=tv)
+                r.raise_for_status()
+            except Exception as ce: fail(f'Chat失败:{ce}'); return
+            try: rd=r.json()
+            except Exception: fail(f'Chat非JSON:{r.text[:200]}'); return
+            try: content=rd["choices"][0]["message"]["content"].strip()
+            except (KeyError,IndexError): fail(f'Chat异常:{str(rd)[:300]}'); return
+            upd('解析提示词...')
+            js=content
+            _mm=_re.search(r'[`]{3}(?:json)?\s*(\{[\s\S]*?\})\s*[`]{3}',content)
+            if _mm: js=_mm.group(1)
+            elif '{' in content: js=content[content.find('{'):content.rfind('}')+1]
+            try:
+                parsed=_j.loads(js)
+                prompts=parsed.get('prompts',[])
+            except Exception as pe: fail(f'JSON解析失败:{pe}'); return
+            if not prompts: fail(f'prompts为空: {content[:400]}'); return
+            total=len(prompts)
+            upd(f'获得{total}条提示词...')
             _done=[0]
-            def _gen_one(idx_prompt):
-                idx, prompt = idx_prompt
-                _h={'Authorization':f'Bearer {api_key}','Content-Type':'application/json'}
-                _b={'model':model,'prompt':prompt,'n':1,'size':size,'quality':quality}
-                _r=requests.post(gen_url_base,headers=_h,json=_b,timeout=timeout_v)
-                _r.raise_for_status()
-                _items=_extract_items(_r.json())
-                _imgs=_parse_imgs(_items)
+            def _gen_one(ip):
+                idx,pr=ip
+                _r2=requests.post(gen_url,
+                    headers={'Authorization':f'Bearer {api_key}','Content-Type':'application/json'},
+                    json={'model':mdl,'prompt':pr,'n':1,'size':sz,'quality':q},timeout=tv)
+                _r2.raise_for_status()
+                _imgs=_parse_imgs(_extract_items(_r2.json()))
                 _done[0]+=1
-                self.after(0,lambda d=_done[0],t=total: self._suite_progress_var.set(f'已完成 {d}/{t} 张...'))
-                return (idx, _imgs)
+                upd(f'已完成{_done[0]}/{total}张...')
+                return (idx,_imgs)
             imgs_map={}
             with _cf.ThreadPoolExecutor(max_workers=min(total,5)) as ex:
-                futs={ex.submit(_gen_one,(idx,p)):idx for idx,p in enumerate(prompts)}
+                futs={ex.submit(_gen_one,(i,p)):i for i,p in enumerate(prompts)}
                 for fut in _cf.as_completed(futs):
-                    try:
-                        idx,res=fut.result()
-                        imgs_map[idx]=res
-                    except Exception as _e:
-                        imgs_map[futs[fut]]=[]
-                        self.after(0,lambda e=_e: self._suite_progress_var.set(f'第{futs[fut]+1}张失败: {e}'))
-            imgs=[img for idx in sorted(imgs_map) for img in imgs_map[idx]]
-            self.after(0, lambda: self._on_suite_done(imgs))
-        except requests.HTTPError as e:
-            msg = str(e)
-            try:
-                d = e.response.json()
-                msg = d.get('error', {}).get('message', msg)
-            except Exception: pass
-            self.after(0, lambda: self._on_suite_err(f'API错误: {msg}'))
+                    try: ix,res=fut.result(); imgs_map[ix]=res
+                    except Exception: imgs_map[futs[fut]]=[]
+            imgs=[x for i in sorted(imgs_map) for x in imgs_map[i]]
+            self.after(0,lambda:self._on_suite_done(imgs))
         except Exception as e:
-            self.after(0, lambda: self._on_suite_err(f'错误: {e}'))
+            import traceback
+            self.after(0,lambda m=(str(e) or traceback.format_exc()[-200:]):self._on_suite_err(m))
+
 
     def _on_suite_done(self, imgs):
         self._result_images.extend(imgs)

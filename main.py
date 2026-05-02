@@ -26,7 +26,8 @@ def load_config():
     if p.exists():
         try: return json.loads(p.read_text(encoding='utf-8'))
         except: pass
-    return {'api_key':'','base_url':DEFAULT_BASE_URL,'model':MODEL_PRESETS[0],'size':SIZE_OPTIONS[0],'quality':QUALITY_OPTIONS[0],'n':1}
+    return {'api_key':'','base_url':DEFAULT_BASE_URL,'model':MODEL_PRESETS[0],'size':SIZE_OPTIONS[0],'quality':QUALITY_OPTIONS[0],'n':1,
+            'chat_url':'https://yunwu.ai/v1/chat/completions','chat_model':'gpt-4o-mini','chat_key':''}
 def save_config(cfg):
     p=get_app_dir()/CONFIG_FILE
     p.write_text(json.dumps(cfg,ensure_ascii=False,indent=2),encoding='utf-8')
@@ -180,6 +181,9 @@ class App(tk.Tk):
         self._var_size.set(self._cfg.get('size',SIZE_OPTIONS[0]) or SIZE_OPTIONS[0])
         self._var_quality.set(self._cfg.get('quality',QUALITY_OPTIONS[0]) or QUALITY_OPTIONS[0])
         self._var_n.set(self._cfg.get('n',1))
+        if hasattr(self,'_var_chat_url'): self._var_chat_url.set(self._cfg.get('chat_url','https://yunwu.ai/v1/chat/completions'))
+        if hasattr(self,'_var_chat_model'): self._var_chat_model.set(self._cfg.get('chat_model','gpt-4o-mini'))
+        if hasattr(self,'_var_chat_key'): self._var_chat_key.set(self._cfg.get('chat_key',''))
 
     def _save_cfg(self):
         self._cfg.update({'api_key':self._var_key.get().strip(),
@@ -190,7 +194,10 @@ class App(tk.Tk):
             'model':self._var_model.get() or MODEL_PRESETS[0],
             'size':self._var_size.get() or SIZE_OPTIONS[0],
             'quality':self._var_quality.get() or QUALITY_OPTIONS[0],
-            'n':self._var_n.get()})
+            'n':self._var_n.get(),
+            'chat_url':(self._var_chat_url.get().strip() if hasattr(self,'_var_chat_url') else 'https://yunwu.ai/v1/chat/completions'),
+            'chat_model':(self._var_chat_model.get().strip() if hasattr(self,'_var_chat_model') else 'gpt-4o-mini'),
+            'chat_key':(self._var_chat_key.get().strip() if hasattr(self,'_var_chat_key') else '')})
         save_config(self._cfg)
         self._status('配置已保存',C['success'])
 
@@ -603,6 +610,8 @@ class App(tk.Tk):
                  ).grid(row=2, column=1, sticky='ew', pady=3)
         tk.Label(api_frame, text='(留空则复用主 Key)', bg=C['card'], fg=C['fg_dim'],
                  font=('Segoe UI', 8)).grid(row=3, column=1, sticky='w', pady=(0,4))
+        HoverBtn(api_frame,text='💾 保存套装配置',bg_n=C['btn2'],bg_h=C['btn2_h'],
+            command=self._save_cfg).grid(row=4,column=0,columnspan=2,sticky='w',pady=(2,6),padx=4)
         tk.Label(parent, text='产品描述:', bg=C['card'], fg=C['fg'],
                  font=('Segoe UI', 9, 'bold')).pack(anchor='w', pady=(4, 2))
         self._suite_desc = tk.Text(parent, height=5, wrap='word',
@@ -726,17 +735,24 @@ class App(tk.Tk):
                     {'role': 'user', 'content': user_content}
                 ],
                 'temperature': 0.8,
-                'response_format': {'type': 'json_object'}
             }
             r = requests.post(chat_url, headers=headers, json=chat_body, timeout=timeout_v)
             r.raise_for_status()
             resp_data = r.json()
-            content = resp_data['choices'][0]['message']['content']
-            import json as _json
-            parsed = _json.loads(content)
-            prompts = parsed.get('prompts', [])
+            content = resp_data['choices'][0]['message']['content'].strip()
+            import json as _json, re as _re
+            # Try parse JSON from content (handle markdown code blocks too)
+            _json_str = content
+            _m = _re.search(r'', content, _re.DOTALL)
+            if _m: _json_str = _m.group(1)
+            elif '{' in content: _json_str = content[content.find('{'):content.rfind('}')+1]
+            try:
+                parsed = _json.loads(_json_str)
+                prompts = parsed.get('prompts', [])
+            except Exception as _pe:
+                raise ValueError(f'无法解析 Chat 返回内容: {content[:300]}')
             if not prompts:
-                raise ValueError('Chat API 返回的 prompts 为空')
+                raise ValueError(f'Chat 返回的 prompts 为空, 原始内容: {content[:300]}')
             self.after(0, lambda n=len(prompts): self._suite_progress_var.set(f'Chat 已返回 {n} 张提示词，准备生图...'))
             # Step 2: 逐一调用图像生成 API
             base_url = self._var_base_url.get().strip() or DEFAULT_BASE_URL

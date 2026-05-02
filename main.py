@@ -5,14 +5,18 @@ from pathlib import Path
 from PIL import Image, ImageTk
 
 CONFIG_FILE = 'config.json'
-MODEL_PRESETS = ['gpt-image-2', 'gpt-image-1', 'gpt-image-1.5', 'dall-e-3', 'dall-e-2']
+MODEL_OPTIONS = ['gpt-image-2', 'gpt-image-1', 'gpt-image-1.5']
 SIZE_OPTIONS = ['1024x1024', '1024x1536', '1536x1024', '512x512', '256x256']
 QUALITY_OPTIONS = ['auto', 'high', 'medium', 'low']
 MAX_REF_IMAGES = 6
 DEFAULT_BASE_URL = 'https://yunwu.ai'
-DEFAULT_GEN_PATH = '/v1/images/generations'
-DEFAULT_EDIT_PATH = '/v1/images/edits'
-DEFAULT_TIMEOUT = 200
+
+def get_api_urls(base_url):
+    base = base_url.rstrip('/')
+    # 如果用户填的已经包含 /v1，不重复加
+    if not base.endswith('/v1'):
+        base = base + '/v1'
+    return base + '/images/generations', base + '/images/edits'
 C={'bg':'#1a1a2e','card':'#16213e','input':'#0d1b2e','border':'#2e3a52',
    'btn':'#e94560','btn_h':'#c73652','btn2':'#2e3a52','btn2_h':'#3e4a62',
    'fg':'#eaeaea','fg_dim':'#8090a8','success':'#4ecca3','error':'#ff4d6d','warning':'#ffd460'}
@@ -25,7 +29,7 @@ def load_config():
     if p.exists():
         try: return json.loads(p.read_text(encoding='utf-8'))
         except: pass
-    return {'api_key':'','base_url':DEFAULT_BASE_URL,'gen_path':DEFAULT_GEN_PATH,'edit_path':DEFAULT_EDIT_PATH,'model':MODEL_PRESETS[0],'size':SIZE_OPTIONS[0],'quality':QUALITY_OPTIONS[0],'n':1,'timeout':DEFAULT_TIMEOUT}
+    return {'api_key':'','base_url':DEFAULT_BASE_URL,'model':MODEL_OPTIONS[0],'size':SIZE_OPTIONS[0],'quality':QUALITY_OPTIONS[0],'n':1}
 def save_config(cfg):
     p=get_app_dir()/CONFIG_FILE
     p.write_text(json.dumps(cfg,ensure_ascii=False,indent=2),encoding='utf-8')
@@ -33,7 +37,7 @@ def b64_to_pil(b64): return Image.open(io.BytesIO(base64.b64decode(b64)))
 def make_thumb(img,size=(160,160)):
     th=img.copy(); th.thumbnail(size,Image.LANCZOS); return ImageTk.PhotoImage(th)
 def auto_fn(idx,ext='png'):
-    return f'image_{time.strftime("%Y%m%d_%H%M%S")}_{idx+1:02d}.{ext}'
+    return f'yunwu_{time.strftime("%Y%m%d_%H%M%S")}_{idx+1:02d}.{ext}'
 
 class HoverBtn(tk.Button):
     def __init__(self,master,bg_n=None,bg_h=None,**kw):
@@ -90,33 +94,26 @@ class ImageViewer(tk.Toplevel):
             self._orig.save(path)
             messagebox.showinfo('成功',f'已保存: {path}')
 
-def _parse_imgs(items):
-    result=[]
-    for d in items:
-        if 'b64_json' in d and d['b64_json']: result.append(b64_to_pil(d['b64_json']))
-        elif 'url' in d and d['url']:
-            import urllib.request
-            with urllib.request.urlopen(d['url'],timeout=30) as resp: result.append(Image.open(io.BytesIO(resp.read())))
-    return result
-
-def api_generate(api_key,gen_url,model,prompt,n,size,quality,timeout):
+def api_generate(api_key,base_url,model,prompt,n,size,quality):
+    url_gen,_=get_api_urls(base_url)
     headers={'Authorization':f'Bearer {api_key}','Content-Type':'application/json'}
-    body={'model':model,'prompt':prompt,'n':n,'size':size,'quality':quality}
-    r=requests.post(gen_url,headers=headers,json=body,timeout=timeout)
+    body={'model':model,'prompt':prompt,'n':n,'size':size,'quality':quality,'response_format':'b64_json'}
+    r=requests.post(url_gen,headers=headers,json=body,timeout=120)
     r.raise_for_status()
-    return _parse_imgs(r.json()['data'])
+    return [b64_to_pil(d['b64_json']) for d in r.json()['data']]
 
-def api_edit(api_key,edit_url,model,prompt,n,size,image_paths,timeout):
+def api_edit(api_key,base_url,model,prompt,n,size,image_paths):
+    _,url_edit=get_api_urls(base_url)
     headers={'Authorization':f'Bearer {api_key}'}
     files=[]; opened=[]
     try:
         for path in image_paths:
             fh=open(path,'rb'); opened.append(fh)
             files.append(('image[]',(Path(path).name,fh,'image/png')))
-        data={'model':model,'prompt':prompt,'n':str(n),'size':size}
-        r=requests.post(edit_url,headers=headers,data=data,files=files,timeout=timeout)
+        data={'model':model,'prompt':prompt,'n':str(n),'size':size,'response_format':'b64_json'}
+        r=requests.post(url_edit,headers=headers,data=data,files=files,timeout=180)
         r.raise_for_status()
-        return _parse_imgs(r.json()['data'])
+        return [b64_to_pil(d['b64_json']) for d in r.json()['data']]
     finally:
         for fh in opened: fh.close()
 
@@ -124,7 +121,7 @@ def api_edit(api_key,edit_url,model,prompt,n,size,image_paths,timeout):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title('空的图像生成工具')
+        self.title('云雾AI 图像生成工具')
         self.geometry('1100x780')
         self.minsize(900,600)
         self.configure(bg=C['bg'])
@@ -144,23 +141,17 @@ class App(tk.Tk):
 
     def _apply_config(self):
         self._var_key.set(self._cfg.get('api_key',''))
-        self._var_base_url.set(self._cfg.get('base_url',DEFAULT_BASE_URL))
-        self._var_gen_path.set(self._cfg.get('gen_path',DEFAULT_GEN_PATH))
-        self._var_edit_path.set(self._cfg.get('edit_path',DEFAULT_EDIT_PATH))
-        self._var_model.set(self._cfg.get('model',MODEL_PRESETS[0]))
+        self._var_base_url.set(self._cfg.get('base_url', DEFAULT_BASE_URL))
+        self._var_model.set(self._cfg.get('model',MODEL_OPTIONS[0]))
         self._var_size.set(self._cfg.get('size',SIZE_OPTIONS[0]))
         self._var_quality.set(self._cfg.get('quality',QUALITY_OPTIONS[0]))
         self._var_n.set(self._cfg.get('n',1))
-        self._var_timeout.set(self._cfg.get('timeout',DEFAULT_TIMEOUT))
 
     def _save_cfg(self):
         self._cfg.update({'api_key':self._var_key.get().strip(),
             'base_url':self._var_base_url.get().strip() or DEFAULT_BASE_URL,
-            'gen_path':self._var_gen_path.get().strip() or DEFAULT_GEN_PATH,
-            'edit_path':self._var_edit_path.get().strip() or DEFAULT_EDIT_PATH,
-            'model':self._var_model.get().strip() or MODEL_PRESETS[0],
-            'size':self._var_size.get(),'quality':self._var_quality.get(),
-            'n':self._var_n.get(),'timeout':self._var_timeout.get()})
+            'model':self._var_model.get(),'size':self._var_size.get(),
+            'quality':self._var_quality.get(),'n':self._var_n.get()})
         save_config(self._cfg)
         self._status('配置已保存',C['success'])
 
@@ -168,7 +159,7 @@ class App(tk.Tk):
         self._style_ttk()
         tb=tk.Frame(self,bg=C['card'],pady=10)
         tb.pack(fill='x')
-        tk.Label(tb,text='🎨  空的图像生成工具',
+        tk.Label(tb,text='✨  云雾AI 图像生成工具',
             bg=C['card'],fg=C['btn'],font=('Segoe UI',14,'bold')).pack(side='left',padx=16)
         tk.Label(tb,text='v1.0.0',bg=C['card'],fg=C['fg_dim'],font=('Segoe UI',8)).pack(side='left')
         kf=tk.Frame(self,bg=C['bg'],pady=6)
@@ -190,26 +181,6 @@ class App(tk.Tk):
             bg=C['input'],fg=C['fg'],insertbackground=C['fg'],relief='flat',font=('Segoe UI',9),bd=4
         ).pack(side='left',fill='x',expand=True,padx=(4,8))
         tk.Label(uf,text='（默认云雾，可换成任意 NewAPI/OneAPI 地址）',
-            bg=C['bg'],fg=C['fg_dim'],font=('Segoe UI',8)).pack(side='left')
-        # Gen path row
-        gf=tk.Frame(self,bg=C['bg'],pady=2)
-        gf.pack(fill='x',padx=16)
-        tk.Label(gf,text='生图路径:',bg=C['bg'],fg=C['fg'],font=('Segoe UI',9,'bold'),width=8).pack(side='left')
-        self._var_gen_path=tk.StringVar(value=DEFAULT_GEN_PATH)
-        tk.Entry(gf,textvariable=self._var_gen_path,
-            bg=C['input'],fg=C['fg'],insertbackground=C['fg'],relief='flat',font=('Segoe UI',9),bd=4
-        ).pack(side='left',fill='x',expand=True,padx=(4,8))
-        tk.Label(gf,text=f'默: {DEFAULT_GEN_PATH}',
-            bg=C['bg'],fg=C['fg_dim'],font=('Segoe UI',8)).pack(side='left')
-        # Edit path row
-        ef2=tk.Frame(self,bg=C['bg'],pady=2)
-        ef2.pack(fill='x',padx=16)
-        tk.Label(ef2,text='编辑路径:',bg=C['bg'],fg=C['fg'],font=('Segoe UI',9,'bold'),width=8).pack(side='left')
-        self._var_edit_path=tk.StringVar(value=DEFAULT_EDIT_PATH)
-        tk.Entry(ef2,textvariable=self._var_edit_path,
-            bg=C['input'],fg=C['fg'],insertbackground=C['fg'],relief='flat',font=('Segoe UI',9),bd=4
-        ).pack(side='left',fill='x',expand=True,padx=(4,8))
-        tk.Label(ef2,text=f'默: {DEFAULT_EDIT_PATH}',
             bg=C['bg'],fg=C['fg_dim'],font=('Segoe UI',8)).pack(side='left')
         tk.Frame(self,bg=C['border'],height=1).pack(fill='x',padx=16,pady=2)
         main=tk.Frame(self,bg=C['bg'])
@@ -247,7 +218,10 @@ class App(tk.Tk):
         self._btn_text.pack(side='left',padx=(0,4))
         self._btn_img=HoverBtn(br,text='参考图生图',bg_n=C['btn2'],bg_h=C['btn2_h'],
             command=lambda:self._set_mode('image'))
-        self._btn_img.pack(side='left')
+        self._btn_img.pack(side='left',padx=(0,4))
+        self._btn_suite=HoverBtn(br,text='主图套装',bg_n=C['btn2'],bg_h=C['btn2_h'],
+            command=lambda:self._set_mode('suite'))
+        self._btn_suite.pack(side='left')
         # Ref images panel
         self._ref_lf=tk.LabelFrame(left,text='参考图片 (0/6)',
             bg=C['card'],fg=C['fg_dim'],font=('Segoe UI',8),relief='flat',bd=1,
@@ -266,26 +240,19 @@ class App(tk.Tk):
         cf=tk.Frame(left,bg=C['card'])
         cf.pack(fill='x',padx=12,pady=4)
         cf.columnconfigure(1,weight=1)
-        self._var_model=tk.StringVar(value=MODEL_PRESETS[0])
+        self._var_model=tk.StringVar(value=MODEL_OPTIONS[0])
         self._var_size=tk.StringVar(value=SIZE_OPTIONS[0])
         self._var_quality=tk.StringVar(value=QUALITY_OPTIONS[0])
         self._var_n=tk.IntVar(value=1)
-        rows=[('模型 (可自定义):',self._var_model,MODEL_PRESETS),
+        rows=[('模型 Model:',self._var_model,MODEL_OPTIONS),
                ('尺寸 Size:',self._var_size,SIZE_OPTIONS),
                ('质量 Quality:',self._var_quality,QUALITY_OPTIONS)]
         for i,(lbl,var,vals) in enumerate(rows):
             tk.Label(cf,text=lbl,bg=C['card'],fg=C['fg'],font=('Segoe UI',9),anchor='w').grid(row=i,column=0,sticky='w',pady=3,padx=(0,4))
-            cb=ttk.Combobox(cf,textvariable=var,values=vals,font=('Segoe UI',9))
-            if i==0: cb.configure(state='normal')
-            else: cb.configure(state='readonly')
-            cb.grid(row=i,column=1,sticky='ew',pady=3)
+            ttk.Combobox(cf,textvariable=var,values=vals,state='readonly',font=('Segoe UI',9)).grid(row=i,column=1,sticky='ew',pady=3)
         tk.Label(cf,text='数量 N:',bg=C['card'],fg=C['fg'],font=('Segoe UI',9),anchor='w').grid(row=3,column=0,sticky='w',pady=3,padx=(0,4))
-        tk.Spinbox(cf,textvariable=self._var_n,from_=1,to=10,width=6,
+        tk.Spinbox(cf,textvariable=self._var_n,from_=1,to=4,width=6,
             bg=C['input'],fg=C['fg'],buttonbackground=C['btn2'],relief='flat',font=('Segoe UI',9)).grid(row=3,column=1,sticky='w',pady=3)
-        self._var_timeout=tk.IntVar(value=DEFAULT_TIMEOUT)
-        tk.Label(cf,text='超时(秒):',bg=C['card'],fg=C['fg'],font=('Segoe UI',9),anchor='w').grid(row=4,column=0,sticky='w',pady=3,padx=(0,4))
-        tk.Spinbox(cf,textvariable=self._var_timeout,from_=30,to=600,width=6,
-            bg=C['input'],fg=C['fg'],buttonbackground=C['btn2'],relief='flat',font=('Segoe UI',9)).grid(row=4,column=1,sticky='w',pady=3)
         # Prompt area
         tk.Label(left,text='Prompt 描述:',bg=C['card'],fg=C['fg'],
             font=('Segoe UI',9,'bold')).pack(anchor='w',padx=12,pady=(8,2))
@@ -294,6 +261,9 @@ class App(tk.Tk):
         self._prompt=tk.Text(pf,height=7,wrap='word',bg=C['input'],fg=C['fg'],
             insertbackground=C['fg'],relief='flat',font=('Segoe UI',9),bd=4,padx=4,pady=4)
         self._prompt.pack(fill='both',expand=True)
+        # Suite frame (主图套装面板，hidden by default)
+        self._suite_frame=tk.Frame(left,bg=C['card'])
+        self._build_suite_panel(self._suite_frame)
         # Generate button
         gbf=tk.Frame(left,bg=C['card'])
         gbf.pack(fill='x',padx=12,pady=(0,10))
@@ -335,21 +305,32 @@ class App(tk.Tk):
             int(-1*(e.delta/120)),'units'))
     def _set_mode(self,mode):
         self._mode=mode
-        if mode=='text':
-            self._btn_text.config(bg=C['btn']); self._btn_text._n=C['btn']
-            self._btn_img.config(bg=C['btn2']); self._btn_img._n=C['btn2']
-            self._ref_lf.pack_forget()
-        else:
-            self._btn_img.config(bg=C['btn']); self._btn_img._n=C['btn']
-            self._btn_text.config(bg=C['btn2']); self._btn_text._n=C['btn2']
-            # Pack ref panel after mode buttons, before config options
+        # Reset all buttons
+        for b in [self._btn_text,self._btn_img,self._btn_suite]:
+            b.config(bg=C['btn2']); b._n=C['btn2']
+        # Activate current
+        btn_map={'text':self._btn_text,'image':self._btn_img,'suite':self._btn_suite}
+        btn_map[mode].config(bg=C['btn']); btn_map[mode]._n=C['btn']
+        # Show/hide panels
+        self._ref_lf.pack_forget()
+        self._suite_frame.pack_forget()
+        if mode=='image':
             self._ref_lf.pack(fill='x',padx=12,pady=4)
+        elif mode=='suite':
+            self._suite_frame.pack(fill='both',expand=True,padx=12,pady=4)
 
     def _setup_dnd(self,widget):
-        pass  # DnD disabled for exe compatibility
+        try:
+            from tkinterdnd2 import DND_FILES
+            widget.drop_target_register(DND_FILES)
+            widget.dnd_bind('<<Drop>>',self._on_drop)
+        except ImportError:
+            pass
 
     def _on_drop(self,event):
-        pass
+        paths=self.tk.splitlist(event.data)
+        for p in paths:
+            self._add_single_ref(p)
 
     def _add_ref_images(self):
         paths=filedialog.askopenfilenames(
@@ -413,19 +394,16 @@ class App(tk.Tk):
         try:
             api_key=self._var_key.get().strip()
             base_url=self._var_base_url.get().strip() or DEFAULT_BASE_URL
-            gen_url=base_url.rstrip('/')+(self._var_gen_path.get().strip() or DEFAULT_GEN_PATH)
-            edit_url=base_url.rstrip('/')+(self._var_edit_path.get().strip() or DEFAULT_EDIT_PATH)
-            model=self._var_model.get().strip() or MODEL_PRESETS[0]
+            model=self._var_model.get()
             prompt=self._prompt.get('1.0','end').strip()
             n=self._var_n.get()
             size=self._var_size.get()
             quality=self._var_quality.get()
-            timeout=self._var_timeout.get()
             if self._mode=='text':
-                imgs=api_generate(api_key,gen_url,model,prompt,n,size,quality,timeout)
+                imgs=api_generate(api_key,base_url,model,prompt,n,size,quality)
             else:
                 paths=[p for p,_ in self._ref_images]
-                imgs=api_edit(api_key,edit_url,model,prompt,n,size,paths,timeout)
+                imgs=api_edit(api_key,base_url,model,prompt,n,size,paths)
             self.after(0,lambda:self._on_gen_done(imgs))
         except requests.HTTPError as e:
             msg=str(e)
@@ -522,6 +500,159 @@ class App(tk.Tk):
             saved.append(str(dest))
         messagebox.showinfo('成功',f'已保存 {len(saved)} 张图片到:\n{folder}')
         self._status(f'已批量保存 {len(saved)} 张',C['success'])
+
+
+    # -- 电商主图套装 ----
+
+    def _build_suite_panel(self, parent):
+        tk.Label(parent, text='电商主图套装', bg=C['card'], fg=C['btn'],
+                 font=('Segoe UI', 11, 'bold')).pack(anchor='w', pady=(8, 4))
+        self._var_chat_url = tk.StringVar(value='https://yunwu.ai/v1/chat/completions')
+        self._var_chat_model = tk.StringVar(value='gpt-4o-mini')
+        self._var_suite_size = tk.StringVar(value='1024x1536')
+        self._suite_progress_var = tk.StringVar(value='')
+        api_frame = tk.Frame(parent, bg=C['card'])
+        api_frame.pack(fill='x', pady=(0, 6))
+        api_frame.columnconfigure(1, weight=1)
+        tk.Label(api_frame, text='Chat URL:', bg=C['card'], fg=C['fg'],
+                 font=('Segoe UI', 9), anchor='w').grid(
+                     row=0, column=0, sticky='w', pady=3, padx=(0, 4))
+        tk.Entry(api_frame, textvariable=self._var_chat_url,
+                 bg=C['input'], fg=C['fg'], insertbackground=C['fg'],
+                 relief='flat', font=('Segoe UI', 9), bd=4
+                 ).grid(row=0, column=1, sticky='ew', pady=3)
+        tk.Label(api_frame, text='Chat模型:', bg=C['card'], fg=C['fg'],
+                 font=('Segoe UI', 9), anchor='w').grid(
+                     row=1, column=0, sticky='w', pady=3, padx=(0, 4))
+        ttk.Combobox(api_frame, textvariable=self._var_chat_model,
+                     values=['gpt-4o-mini','gpt-4o','gpt-4-turbo',
+                             'claude-3-5-sonnet','deepseek-chat','qwen-max'],
+                     font=('Segoe UI', 9), state='normal'
+                     ).grid(row=1, column=1, sticky='ew', pady=3)
+        tk.Label(parent, text='产品描述:', bg=C['card'], fg=C['fg'],
+                 font=('Segoe UI', 9, 'bold')).pack(anchor='w', pady=(4, 2))
+        self._suite_desc = tk.Text(parent, height=5, wrap='word',
+                                   bg=C['input'], fg=C['fg_dim'],
+                                   insertbackground=C['fg'], relief='flat',
+                                   font=('Segoe UI', 9), bd=4, padx=4, pady=4)
+        self._suite_desc.pack(fill='x', pady=(0, 4))
+        _ph = '输入产品信息，如：植物种子套装，自然清新风格...'
+        self._suite_desc.insert('1.0', _ph)
+        def _fi(e, ph=_ph):
+            if self._suite_desc.get('1.0', 'end-1c') == ph:
+                self._suite_desc.delete('1.0', 'end')
+                self._suite_desc.config(fg=C['fg'])
+        def _fo(e, ph=_ph):
+            if not self._suite_desc.get('1.0', 'end-1c').strip():
+                self._suite_desc.insert('1.0', ph)
+                self._suite_desc.config(fg=C['fg_dim'])
+        self._suite_desc.bind('<FocusIn>', _fi)
+        self._suite_desc.bind('<FocusOut>', _fo)
+        sz_frame = tk.Frame(parent, bg=C['card'])
+        sz_frame.pack(fill='x', pady=(0, 4))
+        tk.Label(sz_frame, text='图片尺寸:', bg=C['card'], fg=C['fg'],
+                 font=('Segoe UI', 9)).pack(side='left', padx=(0, 6))
+        ttk.Combobox(sz_frame, textvariable=self._var_suite_size,
+                     values=['1024x1536','1536x1024','1024x1024'],
+                     font=('Segoe UI', 9), state='readonly', width=12
+                     ).pack(side='left')
+        self._suite_gen_btn = HoverBtn(parent, text='✨ 一键生成主图套装（9张）',
+                                        command=self._start_suite_gen)
+        self._suite_gen_btn.pack(fill='x', ipady=4, pady=(4, 2))
+        tk.Label(parent, textvariable=self._suite_progress_var,
+                 bg=C['card'], fg=C['warning'],
+                 font=('Segoe UI', 8)).pack(anchor='w')
+
+    def _start_suite_gen(self):
+        api_key = self._var_key.get().strip()
+        if not api_key:
+            messagebox.showwarning('提示', '请先填写 API Key')
+            return
+        desc = self._suite_desc.get('1.0', 'end-1c').strip()
+        _ph = '输入产品信息，如：植物种子套装，自然清新风格...'
+        if not desc or desc == _ph:
+            messagebox.showwarning('提示', '请输入产品描述')
+            return
+        self._suite_gen_btn.config(state='disabled')
+        self._suite_progress_var.set('正在生成提示词...')
+        threading.Thread(target=self._do_suite_gen, daemon=True).start()
+
+    def _do_suite_gen(self):
+        try:
+            api_key = self._var_key.get().strip()
+            chat_url = self._var_chat_url.get().strip()
+            chat_model = self._var_chat_model.get().strip() or "gpt-4o-mini"
+            timeout_v = self._var_timeout.get() if hasattr(self, "_var_timeout") else 120
+            desc = self._suite_desc.get("1.0", "end-1c").strip()
+            size = self._var_suite_size.get()
+            sys_prompt = (
+                '你是一个专业电商视觉设计师，根据产品描述生成9张电商主图的图像生成提示词。'
+                '请返回 JSON 格式: {"prompts":[...9 prompts...]}。'
+                '每条提示词用英文，200字以内，9张风格各异：'
+                '主图展示/场景水墨画/极简白底/生活场景/特写细节/'
+                '季节限定/赠禼包装/品牌故事/联动顶图。'
+            )
+            headers = {'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}
+            chat_body = {
+                'model': chat_model,
+                'messages': [
+                    {'role': 'system', 'content': sys_prompt},
+                    {'role': 'user', 'content': desc}
+                ],
+                'temperature': 0.8,
+                'response_format': {'type': 'json_object'}
+            }
+            r = requests.post(chat_url, headers=headers, json=chat_body, timeout=timeout_v)
+            r.raise_for_status()
+            resp_data = r.json()
+            content = resp_data['choices'][0]['message']['content']
+            import json as _json
+            prompts = _json.loads(content).get('prompts', [])
+            if not prompts:
+                raise ValueError('Chat API 返回的 prompts 为空')
+            # Step 2: 逐一调用图像生成 API
+            base_url = self._var_base_url.get().strip() or DEFAULT_BASE_URL
+            gen_url_base, _ = get_api_urls(base_url)
+            model = self._var_model.get().strip() or MODEL_OPTIONS[0]
+            quality = self._var_quality.get()
+            total = len(prompts)
+            imgs = []
+            for idx, prompt in enumerate(prompts):
+                self.after(0, lambda i=idx, t=total:
+                    self._suite_progress_var.set(f'正在生成图片 {i+1}/{t}...'))
+                gen_headers = {'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}
+                gen_body = {'model': model, 'prompt': prompt, 'n': 1,
+                            'size': size, 'quality': quality, 'response_format': 'b64_json'}
+                gr = requests.post(gen_url_base, headers=gen_headers,
+                                   json=gen_body, timeout=timeout_v)
+                gr.raise_for_status()
+                for d in gr.json()['data']:
+                    if 'b64_json' in d and d['b64_json']:
+                        imgs.append(b64_to_pil(d['b64_json']))
+            self.after(0, lambda: self._on_suite_done(imgs))
+        except requests.HTTPError as e:
+            msg = str(e)
+            try:
+                d = e.response.json()
+                msg = d.get('error', {}).get('message', msg)
+            except Exception: pass
+            self.after(0, lambda: self._on_suite_err(f'API错误: {msg}'))
+        except Exception as e:
+            self.after(0, lambda: self._on_suite_err(f'错误: {e}'))
+
+    def _on_suite_done(self, imgs):
+        self._result_images.extend(imgs)
+        self._suite_gen_btn.config(state='normal')
+        self._suite_progress_var.set(f'套装生成完成，共 {len(imgs)} 张图片 ✔')
+        self._status(f'主图套装生成完成，共 {len(imgs)} 张', C['success'])
+        self._refresh_results()
+
+    def _on_suite_err(self, msg):
+        self._suite_gen_btn.config(state='normal')
+        self._suite_progress_var.set(f'错误: {msg[:60]}')
+        self._status(msg, C['error'])
+        messagebox.showerror('套装生成失败', msg)
+
 
 if __name__=='__main__':
     app=App()

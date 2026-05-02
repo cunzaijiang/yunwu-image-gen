@@ -149,17 +149,25 @@ class App(tk.Tk):
 
     def _apply_config(self):
         self._var_key.set(self._cfg.get('api_key',''))
-        self._var_base_url.set(self._cfg.get('base_url', DEFAULT_BASE_URL))
-        self._var_model.set(self._cfg.get('model',MODEL_PRESETS[0]))
-        self._var_size.set(self._cfg.get('size',SIZE_OPTIONS[0]))
-        self._var_quality.set(self._cfg.get('quality',QUALITY_OPTIONS[0]))
+        self._var_base_url.set(self._cfg.get('base_url',DEFAULT_BASE_URL))
+        if hasattr(self,'_var_gen_path'): self._var_gen_path.set(self._cfg.get('gen_path',DEFAULT_GEN_PATH))
+        if hasattr(self,'_var_edit_path'): self._var_edit_path.set(self._cfg.get('edit_path',DEFAULT_EDIT_PATH))
+        if hasattr(self,'_var_timeout'): self._var_timeout.set(self._cfg.get('timeout',DEFAULT_TIMEOUT))
+        self._var_model.set(self._cfg.get('model',MODEL_PRESETS[0]) or MODEL_PRESETS[0])
+        self._var_size.set(self._cfg.get('size',SIZE_OPTIONS[0]) or SIZE_OPTIONS[0])
+        self._var_quality.set(self._cfg.get('quality',QUALITY_OPTIONS[0]) or QUALITY_OPTIONS[0])
         self._var_n.set(self._cfg.get('n',1))
 
     def _save_cfg(self):
         self._cfg.update({'api_key':self._var_key.get().strip(),
             'base_url':self._var_base_url.get().strip() or DEFAULT_BASE_URL,
-            'model':self._var_model.get(),'size':self._var_size.get(),
-            'quality':self._var_quality.get(),'n':self._var_n.get()})
+            'gen_path':(self._var_gen_path.get().strip() if hasattr(self,'_var_gen_path') else DEFAULT_GEN_PATH) or DEFAULT_GEN_PATH,
+            'edit_path':(self._var_edit_path.get().strip() if hasattr(self,'_var_edit_path') else DEFAULT_EDIT_PATH) or DEFAULT_EDIT_PATH,
+            'timeout':(self._var_timeout.get() if hasattr(self,'_var_timeout') else DEFAULT_TIMEOUT),
+            'model':self._var_model.get() or MODEL_PRESETS[0],
+            'size':self._var_size.get() or SIZE_OPTIONS[0],
+            'quality':self._var_quality.get() or QUALITY_OPTIONS[0],
+            'n':self._var_n.get()})
         save_config(self._cfg)
         self._status('配置已保存',C['success'])
 

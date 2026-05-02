@@ -605,12 +605,49 @@ class App(tk.Tk):
                      values=['1024x1536','1536x1024','1024x1024'],
                      font=('Segoe UI', 9), state='readonly', width=12
                      ).pack(side='left')
+        # Suite reference images
+        self._suite_refs=[]  # list of (path, thumb)
+        ref_lbl=tk.Label(parent,text='参考图（可选，可上传产品图让 AI 更准确）:',bg=C['card'],fg=C['fg'],
+            font=('Segoe UI',9,'bold'))
+        ref_lbl.pack(anchor='w',pady=(4,2))
+        self._suite_ref_frame=tk.Frame(parent,bg=C['card'])
+        self._suite_ref_frame.pack(fill='x',pady=(0,4))
+        HoverBtn(parent,text='+ 添加参考图',bg_n=C['btn2'],bg_h=C['btn2_h'],
+            command=self._add_suite_refs).pack(anchor='w',pady=(0,4))
         self._suite_gen_btn = HoverBtn(parent, text='✨ 一键生成主图套装',
                                         command=self._start_suite_gen)
         self._suite_gen_btn.pack(fill='x', ipady=4, pady=(4, 2))
         tk.Label(parent, textvariable=self._suite_progress_var,
                  bg=C['card'], fg=C['warning'],
                  font=('Segoe UI', 8)).pack(anchor='w')
+
+    def _add_suite_refs(self):
+        from tkinter import filedialog
+        paths=filedialog.askopenfilenames(title='选择参考图片',
+            filetypes=[('图片','*.png *.jpg *.jpeg *.webp'),('所有文件','*.*')])
+        if not paths: return
+        for p in paths:
+            if len(self._suite_refs)>=6: break
+            try:
+                img=Image.open(p).convert('RGB')
+                img.thumbnail((60,60))
+                thumb=ImageTk.PhotoImage(img)
+                self._suite_refs.append((p,thumb))
+            except Exception: pass
+        self._refresh_suite_refs()
+
+    def _refresh_suite_refs(self):
+        for w in self._suite_ref_frame.winfo_children(): w.destroy()
+        for idx,(path,thumb) in enumerate(self._suite_refs):
+            f=tk.Frame(self._suite_ref_frame,bg=C['card'])
+            f.pack(side='left',padx=2)
+            tk.Label(f,image=thumb,bg=C['card']).pack()
+            tk.Button(f,text='x',fg='red',bg=C['card'],relief='flat',font=('Segoe UI',7),
+                command=lambda i=idx:self._rm_suite_ref(i)).pack()
+
+    def _rm_suite_ref(self,idx):
+        if 0<=idx<len(self._suite_refs): del self._suite_refs[idx]
+        self._refresh_suite_refs()
 
     def _start_suite_gen(self):
         api_key = self._var_key.get().strip()
@@ -643,11 +680,25 @@ class App(tk.Tk):
                 '每条提示词用英文，200字以内，风格各异。不需固定9张，按产品实际需要决定。'
             )
             headers = {'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}
+            # Build user message with optional ref images
+            suite_refs = getattr(self, '_suite_refs', [])
+            if suite_refs:
+                import base64 as _b64
+                user_content = [{'type':'text','text': desc}]
+                for ref_path, _ in suite_refs[:6]:
+                    try:
+                        with open(ref_path,'rb') as _f: _d=_b64.b64encode(_f.read()).decode()
+                        _ext=ref_path.rsplit('.',1)[-1].lower()
+                        _mt='image/png' if _ext=='png' else 'image/jpeg'
+                        user_content.append({'type':'image_url','image_url':{'url':f'data:{_mt};base64,{_d}'}})
+                    except Exception: pass
+            else:
+                user_content = desc
             chat_body = {
                 'model': chat_model,
                 'messages': [
                     {'role': 'system', 'content': sys_prompt},
-                    {'role': 'user', 'content': desc}
+                    {'role': 'user', 'content': user_content}
                 ],
                 'temperature': 0.8,
                 'response_format': {'type': 'json_object'}

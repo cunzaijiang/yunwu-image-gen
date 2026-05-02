@@ -752,10 +752,11 @@ class App(tk.Tk):
             _mm=_re.search(r'[`]{3}(?:json)?\s*(\{[\s\S]*?\})\s*[`]{3}',content)
             if _mm: js=_mm.group(1)
             elif '{' in content: js=content[content.find('{'):content.rfind('}')+1]
+            if not js.strip(): fail(f'模型未返回JSON，内容: {content[:500]}'); return
             try:
                 parsed=_j.loads(js)
                 prompts=parsed.get('prompts',[])
-            except Exception as pe: fail(f'JSON解析失败:{pe}'); return
+            except Exception as pe: fail('JSON解析失败: '+str(pe)+' | 内容: '+content[:400]); return
             if not prompts: fail(f'prompts为空: {content[:400]}'); return
             total=len(prompts)
             upd(f'获得{total}条提示词...')

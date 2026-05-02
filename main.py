@@ -746,18 +746,31 @@ class App(tk.Tk):
             quality = self._var_quality.get()
             total = len(prompts)
             imgs = []
-            for idx, prompt in enumerate(prompts):
-                self.after(0, lambda i=idx, t=total:
-                    self._suite_progress_var.set(f'正在生成图片 {i+1}/{t}...'))
-                gen_headers = {'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}
-                gen_body = {'model': model, 'prompt': prompt, 'n': 1,
-                            'size': size, 'quality': quality}
-                gr = requests.post(gen_url_base, headers=gen_headers,
-                                   json=gen_body, timeout=timeout_v)
-                gr.raise_for_status()
-                for d in gr.json()['data']:
-                    if 'b64_json' in d and d['b64_json']:
-                        imgs.append(b64_to_pil(d['b64_json']))
+            self.after(0, lambda t=total: self._suite_progress_var.set(f'并行生成 {t} 张图片...'))
+            import concurrent.futures as _cf
+            _done=[0]
+            def _gen_one(idx_prompt):
+                idx, prompt = idx_prompt
+                _h={'Authorization':f'Bearer {api_key}','Content-Type':'application/json'}
+                _b={'model':model,'prompt':prompt,'n':1,'size':size,'quality':quality}
+                _r=requests.post(gen_url_base,headers=_h,json=_b,timeout=timeout_v)
+                _r.raise_for_status()
+                _items=_extract_items(_r.json())
+                _imgs=_parse_imgs(_items)
+                _done[0]+=1
+                self.after(0,lambda d=_done[0],t=total: self._suite_progress_var.set(f'已完成 {d}/{t} 张...'))
+                return (idx, _imgs)
+            imgs_map={}
+            with _cf.ThreadPoolExecutor(max_workers=min(total,5)) as ex:
+                futs={ex.submit(_gen_one,(idx,p)):idx for idx,p in enumerate(prompts)}
+                for fut in _cf.as_completed(futs):
+                    try:
+                        idx,res=fut.result()
+                        imgs_map[idx]=res
+                    except Exception as _e:
+                        imgs_map[futs[fut]]=[]
+                        self.after(0,lambda e=_e: self._suite_progress_var.set(f'第{futs[fut]+1}张失败: {e}'))
+            imgs=[img for idx in sorted(imgs_map) for img in imgs_map[idx]]
             self.after(0, lambda: self._on_suite_done(imgs))
         except requests.HTTPError as e:
             msg = str(e)

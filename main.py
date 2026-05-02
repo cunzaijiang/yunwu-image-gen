@@ -7,7 +7,7 @@ from PIL import Image, ImageTk
 CONFIG_FILE = 'config.json'
 MODEL_OPTIONS = ['gpt-image-2', 'gpt-image-1', 'gpt-image-1.5']
 MODEL_PRESETS = ['gpt-image-2', 'gpt-image-1', 'gpt-image-1.5', 'dall-e-3', 'dall-e-2']
-SIZE_OPTIONS = ['1024x1024', '1024x1536', '1536x1024', '512x512', '256x256']
+SIZE_OPTIONS = ['1024x1024', '1024x1536', '1536x1024', '2048x2048', '2048x3072', '3072x2048', '4096x4096', '512x512', '256x256']
 QUALITY_OPTIONS = ['auto', 'high', 'medium', 'low']
 MAX_REF_IMAGES = 6
 DEFAULT_BASE_URL = 'https://yunwu.ai'
@@ -280,7 +280,7 @@ class App(tk.Tk):
                ('质量 Quality:',self._var_quality,QUALITY_OPTIONS)]
         for i,(lbl,var,vals) in enumerate(rows):
             tk.Label(cf,text=lbl,bg=C['card'],fg=C['fg'],font=('Segoe UI',9),anchor='w').grid(row=i,column=0,sticky='w',pady=3,padx=(0,4))
-            cb_st='normal' if i==0 else 'readonly'
+            cb_st='normal' if i<=1 else 'readonly'
             cb=ttk.Combobox(cf,textvariable=var,values=vals,state=cb_st,font=('Segoe UI',9))
             cb.grid(row=i,column=1,sticky='ew',pady=3)
         tk.Label(cf,text='数量 N:',bg=C['card'],fg=C['fg'],font=('Segoe UI',9),anchor='w').grid(row=3,column=0,sticky='w',pady=3,padx=(0,4))
@@ -602,8 +602,8 @@ class App(tk.Tk):
         tk.Label(sz_frame, text='图片尺寸:', bg=C['card'], fg=C['fg'],
                  font=('Segoe UI', 9)).pack(side='left', padx=(0, 6))
         ttk.Combobox(sz_frame, textvariable=self._var_suite_size,
-                     values=['1024x1536','1536x1024','1024x1024'],
-                     font=('Segoe UI', 9), state='readonly', width=12
+                     values=['1024x1536','1536x1024','1024x1024','2048x3072','3072x2048','2048x2048','4096x4096'],
+                     font=('Segoe UI', 9), state='normal', width=14
                      ).pack(side='left')
         # Suite reference images
         self._suite_refs=[]  # list of (path, thumb)

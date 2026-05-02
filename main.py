@@ -620,6 +620,7 @@ class App(tk.Tk):
         self._var_chat_model = tk.StringVar(value='gpt-4o-mini')
         self._var_suite_size = tk.StringVar(value='1024x1536')
         self._var_suite_count = tk.IntVar(value=6)
+        self._var_suite_step = tk.BooleanVar(value=False)
         self._suite_progress_var = tk.StringVar(value='')
         api_frame = tk.Frame(parent, bg=C['card'])
         api_frame.pack(fill='x', pady=(0, 6))
@@ -695,15 +696,49 @@ class App(tk.Tk):
             font=('Segoe UI',9)).pack(side='left')
         tk.Label(cnt_frame,text='张（Chat 模型按此数量生成提示词）',bg=C['card'],fg=C['fg_dim'],
             font=('Segoe UI',8)).pack(side='left',padx=6)
+        # Step mode toggle
+        step_fr=tk.Frame(parent,bg=C['card'])
+        step_fr.pack(fill='x',pady=(0,4))
+        tk.Checkbutton(step_fr,text='📝 分步模式',
+            variable=self._var_suite_step,bg=C['card'],fg=C['fg'],
+            activebackground=C['card'],activeforeground=C['fg'],
+            selectcolor=C['input'],font=('Segoe UI',9),
+            command=self._on_suite_step_toggle).pack(side='left')
+        tk.Label(step_fr,text='先获取提示词，检查后再生图',
+            bg=C['card'],fg=C['fg_dim'],font=('Segoe UI',8)).pack(side='left',padx=6)
+        # Main generate / get-prompts button
         self._suite_gen_btn = HoverBtn(parent, text='✨ 一键生成主图套装',
                                         command=self._start_suite_gen)
         self._suite_gen_btn.pack(fill='x', ipady=4, pady=(4, 2))
         self._suite_prompts_btn=HoverBtn(parent,text='📋 查看提示词',command=self._show_suite_prompts,
             bg=C['btn2'],activebackground=C['btn2'])
         self._suite_prompts_btn.pack(fill='x',ipady=2,pady=(0,4))
-        tk.Label(parent, textvariable=self._suite_progress_var,
-                 bg=C['card'], fg=C['warning'],
-                 font=('Segoe UI', 8)).pack(anchor='w')
+        # Prompt edit area (shown in step mode after fetching)
+        self._suite_edit_frame=tk.Frame(parent,bg=C['card'])
+        tk.Label(self._suite_edit_frame,
+            text='提示词列表（可直接编辑），确认后发送给生图模型',
+            bg=C['card'],fg=C['fg_dim'],font=('Segoe UI',8)).pack(anchor='w',pady=(0,2))
+        _eco=tk.Frame(self._suite_edit_frame,bg=C['card'])
+        _eco.pack(fill='both',expand=True)
+        self._suite_ec=tk.Canvas(_eco,bg=C['card'],highlightthickness=0,height=220)
+        _ecvsb=ttk.Scrollbar(_eco,orient='vertical',command=self._suite_ec.yview)
+        self._suite_ec.configure(yscrollcommand=_ecvsb.set)
+        _ecvsb.pack(side='right',fill='y')
+        self._suite_ec.pack(side='left',fill='both',expand=True)
+        self._suite_edit_inner=tk.Frame(self._suite_ec,bg=C['card'])
+        _ecw=self._suite_ec.create_window((0,0),window=self._suite_edit_inner,anchor='nw')
+        self._suite_edit_inner.bind('<Configure>',
+            lambda e:self._suite_ec.configure(scrollregion=self._suite_ec.bbox('all')))
+        self._suite_ec.bind('<Configure>',
+            lambda e:self._suite_ec.itemconfig(_ecw,width=e.width))
+        self._suite_ec.bind('<MouseWheel>',
+            lambda e:self._suite_ec.yview_scroll(int(-1*(e.delta/120)),'units'))
+        # Confirm button (step mode only, hidden by default)
+        self._suite_confirm_btn=HoverBtn(self._suite_edit_frame,
+            text='✅ 确认提示词，开始生图',command=self._confirm_suite_gen)
+        self._suite_confirm_btn.pack(fill='x',ipady=4,pady=(6,2))
+        tk.Label(parent,textvariable=self._suite_progress_var,
+            bg=C['card'],fg=C['warning'],font=('Segoe UI',8)).pack(anchor='w')
 
     def _add_suite_refs(self):
         from tkinter import filedialog
@@ -733,7 +768,16 @@ class App(tk.Tk):
         if 0<=idx<len(self._suite_refs): del self._suite_refs[idx]
         self._refresh_suite_refs()
 
+
+    def _on_suite_step_toggle(self):
+        if self._var_suite_step.get():
+            self._suite_gen_btn.config(text="📝 获取提示词")
+        else:
+            self._suite_gen_btn.config(text="✨ 一键生成主图套装")
+            self._suite_edit_frame.pack_forget()
+
     def _start_suite_gen(self):
+        if self._var_suite_step.get(): self._fetch_suite_prompts_only(); return
         api_key = self._var_key.get().strip()
         if not api_key:
             messagebox.showwarning('提示', '请先填写 API Key')
@@ -746,6 +790,113 @@ class App(tk.Tk):
         self._suite_gen_btn.config(state='disabled')
         self._suite_progress_var.set('正在生成提示词...')
         threading.Thread(target=self._do_suite_gen, daemon=True).start()
+
+
+    def _fetch_suite_prompts_only(self):
+        api_key=self._var_key.get().strip()
+        ck=getattr(self,"_var_chat_key",None)
+        chat_key=(ck.get().strip() if ck else "") or api_key
+        cu=getattr(self,"_var_chat_url",None)
+        chat_url=cu.get().strip() if cu else ""
+        cm=getattr(self,"_var_chat_model",None)
+        chat_model=(cm.get().strip() if cm else "") or ""
+        desc=self._suite_desc.get("1.0","end-1c").strip()
+        suite_count=self._var_suite_count.get() if hasattr(self,"_var_suite_count") else 6
+        tv=int(self._var_timeout.get()) if hasattr(self,"_var_timeout") else 200
+        ph="输入产品信息，如：植物种子套装，自然清新风格..."
+        from tkinter import messagebox as _mb
+        if not api_key: _mb.showwarning("提示","请先填写 API Key"); return
+        if not chat_url: _mb.showwarning("提示","请填写 Chat URL"); return
+        if not desc or desc==ph: _mb.showwarning("提示","请输入产品描述"); return
+        self._suite_gen_btn.config(state="disabled")
+        self._suite_progress_var.set("正在获取提示词...请稍候")
+        import threading
+        threading.Thread(target=self._do_fetch_prompts,
+            args=(api_key,chat_key,chat_url,chat_model,desc,suite_count,tv),daemon=True).start()
+
+
+    def _do_fetch_prompts(self,api_key,chat_key,chat_url,chat_model,desc,suite_count,tv):
+        import requests,concurrent.futures as _cf2
+        upd=lambda m:self.after(0,lambda x=m:self._suite_progress_var.set(x))
+        def fail(m): self.after(0,lambda x=m:self._on_fetch_err(x))
+        refs=getattr(self,"_suite_refs",[])
+        def _make_uc(text):
+            if refs:
+                import base64 as _b64
+                uc=[{"type":"text","text":text}]
+                for rp,_ in refs[:6]:
+                    try:
+                        with open(rp,"rb") as _f: _d=_b64.b64encode(_f.read()).decode()
+                        _ext=rp.rsplit(".",1)[-1].lower()
+                        _mt="image/png" if _ext=="png" else "image/jpeg"
+                        uc.append({"type":"image_url","image_url":{"url":f"data:{_mt};base64,{_d}"}})
+                    except Exception: pass
+                return uc
+            return text
+        _done=[0]
+        def _get_one(idx):
+            _sp=("你是专业电商视觉设计师。"
+                 f"为下面产品生成第{idx+1}/{suite_count}张主图提示词。"
+                 "只返回纴文本提示词，200字以内，风格独特。")
+            _cb={"model":chat_model,"messages":[{"role":"system","content":_sp},{"role":"user","content":_make_uc(desc)}],"temperature":0.8}
+            _r=requests.post(chat_url,headers={"Authorization":f"Bearer {chat_key}","Content-Type":"application/json"},json=_cb,timeout=tv)
+            _r.raise_for_status()
+            _p=_r.json()["choices"][0]["message"]["content"].strip()
+            _done[0]+=1
+            upd(f"提示词 {_done[0]}/{suite_count} 已就绪...")
+            return _p
+        prompts=[]
+        try:
+            with _cf2.ThreadPoolExecutor(max_workers=min(suite_count,5)) as _ex2:
+                _futs={_ex2.submit(_get_one,i):i for i in range(suite_count)}
+                try:
+                    for _fut in _cf2.as_completed(_futs,timeout=tv+10):
+                        try:
+                            _p=_fut.result()
+                            if _p: prompts.append(_p)
+                        except Exception as _ce:
+                            upd(f"第{_futs[_fut]+1}条失败: {_ce}")
+                except Exception: pass
+        except Exception as e: fail(f"获取提示词失败: {e}"); return
+        if not prompts: fail("所有提示词请求均失败"); return
+        self.after(0,lambda ps=list(prompts):self._on_prompts_fetched(ps))
+
+
+    def _on_prompts_fetched(self,prompts):
+        self._last_suite_prompts=prompts
+        self._suite_gen_btn.config(state="normal")
+        cnt=len(prompts)
+        self._suite_progress_var.set(f"{cnt} 条提示词已就绪，请检查并确认生图")
+        inner=self._suite_edit_inner
+        for w in inner.winfo_children(): w.destroy()
+        self._suite_prompt_vars=[]
+        for idx,p in enumerate(prompts):
+            fr=tk.Frame(inner,bg=C["card"])
+            fr.pack(fill="x",padx=4,pady=(4,0))
+            tk.Label(fr,text=f"[{idx+1}]",bg=C["card"],fg=C["fg_dim"],
+                font=("Segoe UI",8),width=3).pack(side="left",anchor="n",pady=2)
+            txv=tk.Text(fr,height=4,bg=C["input"],fg=C["fg"],
+                insertbackground=C["fg"],font=("Segoe UI",9),wrap="word",relief="flat")
+            txv.insert("end",p)
+            txv.pack(side="left",fill="x",expand=True)
+            self._suite_prompt_vars.append(txv)
+        self._suite_edit_frame.pack(fill="both",expand=True,padx=4,pady=(0,4))
+
+    def _on_fetch_err(self,msg):
+        self._suite_gen_btn.config(state="normal")
+        self._suite_progress_var.set(f"获取提示词失败: {msg[:80]}")
+
+    def _confirm_suite_gen(self):
+        pvars=getattr(self,"_suite_prompt_vars",[])
+        if not pvars: return
+        prompts=[v.get("1.0","end-1c").strip() for v in pvars]
+        prompts=[p for p in prompts if p]
+        if not prompts: return
+        self._suite_confirm_btn.config(state="disabled")
+        self._suite_gen_btn.config(state="disabled")
+        self._suite_progress_var.set("开始生图...")
+        import threading
+        threading.Thread(target=self._do_suite_gen_with_prompts,args=(prompts,),daemon=True).start()
 
     def _do_suite_gen(self):
         import json as _j, re as _re, concurrent.futures as _cf
@@ -887,6 +1038,47 @@ class App(tk.Tk):
         self._status(msg, C['error'])
         messagebox.showerror('套装生成失败', msg)
 
+
+
+    def _do_suite_gen_with_prompts(self,prompts):
+        import requests,concurrent.futures as _cf
+        upd=lambda m:self.after(0,lambda x=m:self._suite_progress_var.set(x))
+        api_key=self._var_key.get().strip()
+        mdl=self._var_model.get().strip()
+        _vs=getattr(self,"_var_suite_size",None)
+        sz=_vs.get() if _vs else "1024x1536"
+        q=self._var_quality.get() or "standard"
+        bu=self._var_base_url.get().strip()
+        gp=self._var_gen_path.get().strip() if hasattr(self,"_var_gen_path") else "/v1/images/generations"
+        gen_url=bu.rstrip('/')+gp
+        tv=int(self._var_timeout.get()) if hasattr(self,"_var_timeout") else 200
+        total=len(prompts)
+        _done=[0]
+        def _gen(ip):
+            idx,pr=ip
+            _r=requests.post(gen_url,headers={"Authorization":f"Bearer {api_key}","Content-Type":"application/json"},json={"model":mdl,"prompt":pr,"n":1,"size":sz,"quality":q},timeout=tv)
+            _r.raise_for_status()
+            _imgs=_parse_imgs(_extract_items(_r.json()))
+            _done[0]+=1; upd(f"\u5df2\u5b8c\u6210{_done[0]}/{total}\u5f20...")
+            return (idx,_imgs)
+        imgs_map={}
+        self._last_suite_prompts=list(prompts)
+        with _cf.ThreadPoolExecutor(max_workers=min(total,5)) as ex:
+            futs={ex.submit(_gen,(i,p)):i for i,p in enumerate(prompts)}
+            try:
+                for fut in _cf.as_completed(futs,timeout=tv+10):
+                    try: ix,res=fut.result(); imgs_map[ix]=res
+                    except Exception as ge: imgs_map[futs[fut]]=[]; upd(f"\u7b2c{futs[fut]+1}\u5f20\u5931\u8d25: {ge}")
+            except Exception: pass
+        imgs=[x for i in sorted(imgs_map) for x in imgs_map[i]]
+        self.after(0,lambda:self._on_suite_done_step(imgs))
+
+    def _on_suite_done_step(self,imgs):
+        self._result_images.extend(imgs)
+        self._suite_confirm_btn.config(state='normal')
+        self._suite_gen_btn.config(state='normal')
+        self._suite_progress_var.set(f"\u5206\u6b65\u6a21\u5f0f\u5b8c\u6210\uff0c\u5171 {len(imgs)} \u5f20\u56fe\u7247 \u2714")
+        self._refresh_results()
 
 if __name__=='__main__':
     app=App()

@@ -761,7 +761,7 @@ class App(tk.Tk):
                     except Exception: pass
             else:
                 uc=desc
-            cb={'model':chat_model,'messages':[{'role':'system','content':sp},{'role':'user','content':uc}],'temperature':0.8,'max_tokens':10000}
+            cb={'model':chat_model,'messages':[{'role':'system','content':sp},{'role':'user','content':uc}],'temperature':0.8,'max_tokens':100000}
             upd(f'正在请求 Chat API ({chat_model})...')
             try:
                 r=requests.post(chat_url,

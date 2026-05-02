@@ -129,7 +129,7 @@ def api_edit(api_key,edit_url,model,prompt,n,size,image_paths,timeout):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title('云雾AI 图像生成工具')
+        self.title('空的图像生成工具')
         self.geometry('1100x780')
         self.minsize(900,600)
         self.configure(bg=C['bg'])
@@ -175,7 +175,7 @@ class App(tk.Tk):
         self._style_ttk()
         tb=tk.Frame(self,bg=C['card'],pady=10)
         tb.pack(fill='x')
-        tk.Label(tb,text='✨  云雾AI 图像生成工具',
+        tk.Label(tb,text='✨  空的图像生成工具',
             bg=C['card'],fg=C['btn'],font=('Segoe UI',14,'bold')).pack(side='left',padx=16)
         tk.Label(tb,text='v1.0.0',bg=C['card'],fg=C['fg_dim'],font=('Segoe UI',8)).pack(side='left')
         kf=tk.Frame(self,bg=C['bg'],pady=6)
@@ -285,22 +285,22 @@ class App(tk.Tk):
         tk.Spinbox(cf,textvariable=self._var_n,from_=1,to=10,width=6,
             bg=C['input'],fg=C['fg'],buttonbackground=C['btn2'],relief='flat',font=('Segoe UI',9)).grid(row=3,column=1,sticky='w',pady=3)
         # Prompt area
-        tk.Label(left,text='Prompt 描述:',bg=C['card'],fg=C['fg'],
-            font=('Segoe UI',9,'bold')).pack(anchor='w',padx=12,pady=(8,2))
-        pf=tk.Frame(left,bg=C['card'])
-        pf.pack(fill='both',expand=True,padx=12,pady=(0,6))
-        self._prompt=tk.Text(pf,height=7,wrap='word',bg=C['input'],fg=C['fg'],
+        self._prompt_lf=tk.Frame(left,bg=C['card'])
+        self._prompt_lf.pack(fill='both',expand=True,padx=12,pady=(0,6))
+        tk.Label(self._prompt_lf,text='Prompt 描述:',bg=C['card'],fg=C['fg'],
+            font=('Segoe UI',9,'bold')).pack(anchor='w',pady=(8,2))
+        self._prompt=tk.Text(self._prompt_lf,height=7,wrap='word',bg=C['input'],fg=C['fg'],
             insertbackground=C['fg'],relief='flat',font=('Segoe UI',9),bd=4,padx=4,pady=4)
         self._prompt.pack(fill='both',expand=True)
-        # Suite frame (主图套装面板，hidden by default)
+        # Suite frame (hidden by default)
         self._suite_frame=tk.Frame(left,bg=C['card'])
         self._build_suite_panel(self._suite_frame)
         # Generate button
-        gbf=tk.Frame(left,bg=C['card'])
-        gbf.pack(fill='x',padx=12,pady=(0,10))
-        self._gen_btn=HoverBtn(gbf,text='✨  开始生成',command=self._start_gen)
+        self._gen_lf=tk.Frame(left,bg=C['card'])
+        self._gen_lf.pack(fill='x',padx=12,pady=(0,10))
+        self._gen_btn=HoverBtn(self._gen_lf,text='✨  开始生成',command=self._start_gen)
         self._gen_btn.pack(fill='x',ipady=4)
-        HoverBtn(gbf,text='批量保存所有图片',
+        HoverBtn(self._gen_lf,text='批量保存所有图片',
             bg_n=C['btn2'],bg_h=C['btn2_h'],command=self._save_all).pack(fill='x',pady=(4,0),ipady=2)
     def _build_right(self,parent):
         right=tk.Frame(parent,bg=C['bg'])
@@ -345,10 +345,17 @@ class App(tk.Tk):
         # Show/hide panels
         self._ref_lf.pack_forget()
         self._suite_frame.pack_forget()
+        self._prompt_lf.pack_forget()
+        self._gen_lf.pack_forget()
         if mode=='image':
             self._ref_lf.pack(fill='x',padx=12,pady=4)
+            self._prompt_lf.pack(fill='both',expand=True,padx=12,pady=(0,6))
+            self._gen_lf.pack(fill='x',padx=12,pady=(0,10))
         elif mode=='suite':
-            self._suite_frame.pack(fill='both',expand=True,padx=12,pady=4)
+            self._suite_frame.pack(fill='both',expand=True,padx=4,pady=4)
+        else:  # text
+            self._prompt_lf.pack(fill='both',expand=True,padx=12,pady=(0,6))
+            self._gen_lf.pack(fill='x',padx=12,pady=(0,10))
 
     def _setup_dnd(self,widget):
         pass  # DnD disabled for exe compatibility

@@ -721,7 +721,7 @@ class App(tk.Tk):
             sp=('你是专业电商视觉设计师。'
                 '根据产品描述决定生成几张主图（3-12张）。'
                 '只返回纴JSON，格式{"count":N,"prompts":["p1",...]}. '
-                '每条200字英文，风格各异。禁止输出JSON以外任何文字。')
+                '每条提示词80字以内简洁英文，风格各异。禁止输出JSON以外任何文字。')
             refs=getattr(self,"_suite_refs",[])
             if refs:
                 import base64 as _b64
@@ -735,7 +735,7 @@ class App(tk.Tk):
                     except Exception: pass
             else:
                 uc=desc
-            cb={'model':chat_model,'messages':[{'role':'system','content':sp},{'role':'user','content':uc}],'temperature':0.8}
+            cb={'model':chat_model,'messages':[{'role':'system','content':sp},{'role':'user','content':uc}],'temperature':0.8,'max_tokens':2000}
             upd(f'正在请求 Chat API ({chat_model})...')
             try:
                 r=requests.post(chat_url,
@@ -751,7 +751,9 @@ class App(tk.Tk):
             js=content
             _mm=_re.search(r'[`]{3}(?:json)?\s*(\{[\s\S]*?\})\s*[`]{3}',content)
             if _mm: js=_mm.group(1)
-            elif '{' in content: js=content[content.find('{'):content.rfind('}')+1]
+            elif '{' in content:
+                _s=content.find('{'); _e=content.rfind('}')
+                js=content[_s:_e+1] if _e>_s else content[_s:]
             if not js.strip(): fail(f'模型未返回JSON，内容: {content[:500]}'); return
             try:
                 parsed=_j.loads(js)

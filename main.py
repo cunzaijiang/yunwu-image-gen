@@ -547,6 +547,7 @@ class App(tk.Tk):
         tk.Label(parent, text='电商主图套装', bg=C['card'], fg=C['btn'],
                  font=('Segoe UI', 11, 'bold')).pack(anchor='w', pady=(8, 4))
         self._var_chat_url = tk.StringVar(value='https://yunwu.ai/v1/chat/completions')
+        self._var_chat_key = tk.StringVar(value='')
         self._var_chat_model = tk.StringVar(value='gpt-4o-mini')
         self._var_suite_size = tk.StringVar(value='1024x1536')
         self._suite_progress_var = tk.StringVar(value='')
@@ -568,6 +569,15 @@ class App(tk.Tk):
                              'claude-3-5-sonnet','deepseek-chat','qwen-max'],
                      font=('Segoe UI', 9), state='normal'
                      ).grid(row=1, column=1, sticky='ew', pady=3)
+        tk.Label(api_frame, text='Chat Key:', bg=C['card'], fg=C['fg'],
+                 font=('Segoe UI', 9), anchor='w').grid(
+                     row=2, column=0, sticky='w', pady=3, padx=(0, 4))
+        tk.Entry(api_frame, textvariable=self._var_chat_key, show='*',
+                 bg=C['input'], fg=C['fg'], insertbackground=C['fg'],
+                 relief='flat', font=('Segoe UI', 9), bd=4
+                 ).grid(row=2, column=1, sticky='ew', pady=3)
+        tk.Label(api_frame, text='(留空则复用主 Key)', bg=C['card'], fg=C['fg_dim'],
+                 font=('Segoe UI', 8)).grid(row=3, column=1, sticky='w', pady=(0,4))
         tk.Label(parent, text='产品描述:', bg=C['card'], fg=C['fg'],
                  font=('Segoe UI', 9, 'bold')).pack(anchor='w', pady=(4, 2))
         self._suite_desc = tk.Text(parent, height=5, wrap='word',
@@ -618,7 +628,9 @@ class App(tk.Tk):
 
     def _do_suite_gen(self):
         try:
-            api_key = self._var_key.get().strip()
+            main_key = self._var_key.get().strip()
+            chat_key = self._var_chat_key.get().strip() if hasattr(self,'_var_chat_key') else ''
+            api_key = chat_key if chat_key else main_key
             chat_url = self._var_chat_url.get().strip()
             chat_model = self._var_chat_model.get().strip() or "gpt-4o-mini"
             timeout_v = self._var_timeout.get() if hasattr(self, "_var_timeout") else 120

@@ -801,8 +801,6 @@ class App(tk.Tk):
                 upd(f'提示词 {_chat_done[0]}/{suite_count} 已就绪...')
                 return _p
             prompts=[]
-            with __import__('concurrent.futures',fromlist=['ThreadPoolExecutor','as_completed']) as _cfm:
-                pass
             import concurrent.futures as _cf2
             with _cf2.ThreadPoolExecutor(max_workers=min(suite_count,5)) as _ex2:
                 _futs={_ex2.submit(_get_one_prompt,i):i for i in range(suite_count)}

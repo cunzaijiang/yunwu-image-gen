@@ -704,7 +704,8 @@ class App(tk.Tk):
         try:
             k1=self._var_key.get().strip()
             k2=self._var_chat_key.get().strip() if hasattr(self,'_var_chat_key') else ''
-            api_key=k2 if k2 else k1
+            api_key=k2 if k2 else k1  # used for Chat
+            img_key=k1  # always use main key for image generation
             chat_url=self._var_chat_url.get().strip()
             chat_model=self._var_chat_model.get().strip() or 'gpt-4o-mini'
             tv=int(self._var_timeout.get()) if hasattr(self,'_var_timeout') else 120
@@ -766,7 +767,7 @@ class App(tk.Tk):
             def _gen_one(ip):
                 idx,pr=ip
                 _r2=requests.post(gen_url,
-                    headers={'Authorization':f'Bearer {api_key}','Content-Type':'application/json'},
+                    headers={'Authorization':f'Bearer {img_key}','Content-Type':'application/json'},
                     json={'model':mdl,'prompt':pr,'n':1,'size':sz,'quality':q},timeout=tv)
                 _r2.raise_for_status()
                 _imgs=_parse_imgs(_extract_items(_r2.json()))

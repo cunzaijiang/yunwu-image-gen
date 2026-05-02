@@ -767,50 +767,53 @@ class App(tk.Tk):
             if not desc: fail('请先填写产品描述'); return
             if not api_key: fail('请先填写 API Key'); return
             if not chat_url: fail('请填写 Chat URL'); return
-            sp=(f'你是专业电商视觉设计师。'
-                '根据用户要求生成{suite_count}张主图。'
-                '只返回纴JSON，格式{"count":N,"prompts":["p1",...]}. '
-                '每条提示词不超过200字，风格各异。禁止输出JSON以外任何文字。')
-            refs=getattr(self,"_suite_refs",[])
-            if refs:
-                import base64 as _b64
-                uc=[{'type':'text','text':desc}]
-                for rp,_ in refs[:6]:
-                    try:
-                        with open(rp,"rb") as _f: _d=_b64.b64encode(_f.read()).decode()
-                        _ext=rp.rsplit(".",1)[-1].lower()
-                        _mt='image/png' if _ext=='png' else 'image/jpeg'
-                        uc.append({'type':'image_url','image_url':{'url':f'data:{_mt};base64,{_d}'}})
-                    except Exception: pass
-            else:
-                uc=desc
-            cb={'model':chat_model,'messages':[{'role':'system','content':sp},{'role':'user','content':uc}],'temperature':0.8}
-            upd(f'正在请求 Chat API ({chat_model})...')
-            try:
-                r=requests.post(chat_url,
+            # Build base user content (with optional ref images)
+            refs=getattr(self,'_suite_refs',[])
+            def _make_uc(text):
+                if refs:
+                    import base64 as _b64
+                    uc=[{'type':'text','text':text}]
+                    for rp,_ in refs[:6]:
+                        try:
+                            with open(rp,'rb') as _f: _d=_b64.b64encode(_f.read()).decode()
+                            _ext=rp.rsplit('.',1)[-1].lower()
+                            _mt='image/png' if _ext=='png' else 'image/jpeg'
+                            uc.append({'type':'image_url','image_url':{'url':f'data:{_mt};base64,{_d}'}})
+                        except Exception: pass
+                    return uc
+                return text
+            # One request per prompt to avoid JSON truncation
+            upd(f'并行请求 {suite_count} 条提示词...')
+            _chat_done=[0]
+            def _get_one_prompt(idx):
+                _sp=(f'你是专业电商视觉设计师。'
+                     f'为下面产品生成第{idx+1}/{suite_count}张主图提示词。'
+                     '只返回纴文本提示词，200字以内，风格独特。不要JSON。')
+                _cb={'model':chat_model,
+                    'messages':[{'role':'system','content':_sp},{'role':'user','content':_make_uc(desc)}],
+                    'temperature':0.8}
+                _r=requests.post(chat_url,
                     headers={'Authorization':f'Bearer {api_key}','Content-Type':'application/json'},
-                    json=cb,timeout=tv)
-                r.raise_for_status()
-            except Exception as ce: fail(f'Chat失败:{ce}'); return
-            try: rd=r.json()
-            except Exception: fail(f'Chat非JSON:{r.text[:200]}'); return
-            try: content=rd["choices"][0]["message"]["content"].strip()
-            except (KeyError,IndexError): fail(f'Chat异常:{str(rd)[:300]}'); return
-            upd('解析提示词...')
-            js=content
-            _mm=_re.search(r'[`]{3}(?:json)?\s*(\{[\s\S]*?\})\s*[`]{3}',content)
-            if _mm: js=_mm.group(1)
-            elif '{' in content:
-                _s=content.find('{'); _e=content.rfind('}')
-                js=content[_s:_e+1] if _e>_s else content[_s:]
-            if not js.strip(): fail(f'模型未返回JSON，内容: {content[:500]}'); return
-            try:
-                js = _repair_json(js)
-                parsed=_j.loads(js)
-                prompts=parsed.get('prompts',[])
-                prompts=[str(p)[:300] for p in prompts[:12]]  # max 12 prompts, each 300 chars
-            except Exception as pe: fail('JSON解析失败: '+str(pe)+' | 内容: '+content[:400]); return
-            if not prompts: fail(f'prompts为空: {content[:400]}'); return
+                    json=_cb,timeout=tv)
+                _r.raise_for_status()
+                _p=_r.json()['choices'][0]['message']['content'].strip()
+                _chat_done[0]+=1
+                upd(f'提示词 {_chat_done[0]}/{suite_count} 已就绪...')
+                return _p
+            prompts=[]
+            with __import__('concurrent.futures',fromlist=['ThreadPoolExecutor','as_completed']) as _cfm:
+                pass
+            import concurrent.futures as _cf2
+            with _cf2.ThreadPoolExecutor(max_workers=min(suite_count,5)) as _ex2:
+                _futs={_ex2.submit(_get_one_prompt,i):i for i in range(suite_count)}
+                for _fut in _cf2.as_completed(_futs):
+                    try:
+                        _p=_fut.result()
+                        if _p: prompts.append(_p)
+                    except Exception as _ce:
+                        upd(f'第{_futs[_fut]+1}条提示词获取失败: {_ce}')
+            if not prompts: fail('所有提示词生成失败，请检查 Chat API 配置'); return
+
             total=len(prompts)
             upd(f'获得{total}条提示词...')
             _done=[0]

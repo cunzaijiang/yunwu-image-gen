@@ -1010,8 +1010,9 @@ class App(tk.Tk):
         win=tk.Toplevel(self)
         win.title('自定义 Chat 提示词')
         win.configure(bg=C['bg'])
-        win.geometry('620x360')
+        win.geometry('620x480')
         win.resizable(True,True)
+        win.minsize(500,420)
         tk.Label(win,text='可用占位符：{idx}=当前第几张，{total}=总张数',
             bg=C['bg'],fg=C['fg_dim'],font=('Segoe UI',8)).pack(anchor='w',padx=12,pady=(10,2))
         fr=tk.Frame(win,bg=C['bg']); fr.pack(fill='both',expand=True,padx=12,pady=(0,6))

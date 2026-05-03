@@ -715,7 +715,10 @@ class App(tk.Tk):
         self._suite_prog_lbl.pack(fill='x',padx=4)
         self._suite_prompts_btn=HoverBtn(parent,text='📋 查看提示词',command=self._show_suite_prompts,
             bg_n=C['btn2'],bg_h=C['btn2_h'])
-        self._suite_prompts_btn.pack(fill='x',ipady=2,pady=(0,4))
+        self._suite_prompts_btn.pack(fill='x',ipady=2,pady=(0,2))
+        self._suite_custom_prompt_btn=HoverBtn(parent,text='✏️ 自定义提示词',command=self._open_custom_prompt_dialog,
+            bg_n=C['btn2'],bg_h=C['btn2_h'])
+        self._suite_custom_prompt_btn.pack(fill='x',ipady=2,pady=(0,4))
         # Prompt edit area (shown in step mode after fetching)
         self._suite_edit_frame=tk.Frame(parent,bg=C['card'])
         tk.Label(self._suite_edit_frame,
@@ -834,11 +837,11 @@ class App(tk.Tk):
                     except Exception: pass
                 return uc
             return text
+        _DEFAULT_SP='你是专业电商视觉设计师。为下面产品生成第{idx}/{total}张主图提示词。只返回纯文本提示词，200字以内，风格独特。不要JSON。'
+        _sp_tpl=getattr(self,'_custom_suite_prompt','').strip() or _DEFAULT_SP
         _done=[0]
         def _get_one(idx):
-            _sp=("你是专业电商视觉设计师。"
-                 f"为下面产品生成第{idx+1}/{suite_count}张主图提示词。"
-                 "只返回纴文本提示词，200字以内，风格独特。")
+            _sp=_sp_tpl.replace('{idx}',str(idx+1)).replace('{total}',str(suite_count))
             _cb={"model":chat_model,"messages":[{"role":"system","content":_sp},{"role":"user","content":_make_uc(desc)}],"temperature":0.8}
             _r=requests.post(chat_url,headers={"Authorization":f"Bearer {chat_key}","Content-Type":"application/json"},json=_cb,timeout=tv)
             _r.raise_for_status()
@@ -940,10 +943,10 @@ class App(tk.Tk):
             # One request per prompt to avoid JSON truncation
             upd(f'并行请求 {suite_count} 条提示词...')
             _chat_done=[0]
+            _DEFAULT_SP2='你是专业电商视觉设计师。为下面产品生成第{idx}/{total}张主图提示词。只返回纯文本提示词，200字以内，风格独特。不要JSON。'
+            _sp_tpl2=getattr(self,'_custom_suite_prompt','').strip() or _DEFAULT_SP2
             def _get_one_prompt(idx):
-                _sp=(f'你是专业电商视觉设计师。'
-                     f'为下面产品生成第{idx+1}/{suite_count}张主图提示词。'
-                     '只返回纴文本提示词，200字以内，风格独特。不要JSON。')
+                _sp=_sp_tpl2.replace('{idx}',str(idx+1)).replace('{total}',str(suite_count))
                 _cb={'model':chat_model,
                     'messages':[{'role':'system','content':_sp},{'role':'user','content':_make_uc(desc)}],
                     'temperature':0.8}
@@ -1000,6 +1003,36 @@ class App(tk.Tk):
             import traceback
             self.after(0,lambda m=(str(e) or traceback.format_exc()[-200:]):self._on_suite_err(m))
 
+
+    _DEFAULT_SUITE_SP='你是专业电商视觉设计师。为下面产品生成第{idx}/{total}张主图提示词。只返回纯文本提示词，200字以内，风格独特。不要JSON。'
+
+    def _open_custom_prompt_dialog(self):
+        win=tk.Toplevel(self)
+        win.title('自定义 Chat 提示词')
+        win.configure(bg=C['bg'])
+        win.geometry('620x360')
+        win.resizable(True,True)
+        tk.Label(win,text='可用占位符：{idx}=当前第几张，{total}=总张数',
+            bg=C['bg'],fg=C['fg_dim'],font=('Segoe UI',8)).pack(anchor='w',padx=12,pady=(10,2))
+        fr=tk.Frame(win,bg=C['bg']); fr.pack(fill='both',expand=True,padx=12,pady=(0,6))
+        sb=ttk.Scrollbar(fr); sb.pack(side='right',fill='y')
+        txt=tk.Text(fr,bg=C['input'],fg=C['fg'],insertbackground=C['fg'],
+            font=('Segoe UI',9),wrap='word',relief='flat',yscrollcommand=sb.set)
+        txt.pack(side='left',fill='both',expand=True)
+        sb.config(command=txt.yview)
+        cur=getattr(self,'_custom_suite_prompt','').strip() or self._DEFAULT_SUITE_SP
+        txt.insert('end',cur)
+        btn_fr=tk.Frame(win,bg=C['bg']); btn_fr.pack(fill='x',padx=12,pady=(0,10))
+        def _save():
+            val=txt.get('1.0','end-1c').strip()
+            self._custom_suite_prompt=val if val and val!=self._DEFAULT_SUITE_SP else ''
+            win.destroy()
+        def _reset():
+            txt.delete('1.0','end')
+            txt.insert('end',self._DEFAULT_SUITE_SP)
+        HoverBtn(btn_fr,text='✅ 保存',command=_save).pack(side='left',ipady=2,padx=(0,6))
+        HoverBtn(btn_fr,text='↩️ 恢复默认',command=_reset,bg_n=C['btn2'],bg_h=C['btn2_h']).pack(side='left',ipady=2)
+        win.grab_set()
 
     def _show_suite_prompts(self):
         prompts=getattr(self,"_last_suite_prompts",[])
